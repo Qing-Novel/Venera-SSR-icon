@@ -1,4 +1,3 @@
-import "dart:io";
 part of 'reader.dart';
 
 class ComicImage extends StatefulWidget {

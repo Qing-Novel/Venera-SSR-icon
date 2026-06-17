@@ -58,6 +58,13 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Fix C2338 error for plugins using experimental coroutines
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+    if(TARGET ${plugin})
+        target_compile_definitions(${plugin} PRIVATE "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
+    endif()
+endforeach()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

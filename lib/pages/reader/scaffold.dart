@@ -968,7 +968,7 @@ class _BatteryWidgetState extends State<_BatteryWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_hasBattery) {
+    if (App.isWindows || !_hasBattery) {
       return const SizedBox.shrink(); //Empty Widget
     }
     return _batteryInfo(_batteryLevel);
