@@ -132,6 +132,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (widget.image != oldWidget.image) {
       _resolveImage();
+      _triggerImageUpscale();
     }
   }
 
