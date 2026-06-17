@@ -17,6 +17,7 @@ jobs:
         with:
           flutter-version: '3.41.2'
           channel: 'stable'
+          cache: true
           
       - name: Install dependencies
         run: flutter pub get
@@ -24,8 +25,15 @@ jobs:
       - name: Build iOS (No Signing)
         run: flutter build ios --release --no-codesign
         
+      - name: Create Payload Directory
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r ../../Venera-iOS-NoCodesign.ipa Payload
+          
       - name: Upload iOS Build
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-ios
-          path: build/ios/iphoneos/
+          name: app-release-ios-ipa
+          path: build/Venera-iOS-NoCodesign.ipa

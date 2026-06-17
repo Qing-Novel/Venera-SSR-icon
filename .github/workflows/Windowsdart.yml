@@ -17,6 +17,7 @@ jobs:
         with:
           flutter-version: '3.41.2'
           channel: 'stable'
+          cache: true
           
       - name: Install dependencies
         run: flutter pub get
@@ -27,8 +28,16 @@ jobs:
       - name: Build Windows
         run: flutter build windows --release
         
+      - name: Package Windows Build
+        shell: pwsh
+        run: |
+          $VERSION = (Get-Content pubspec.yaml | Select-String "version: ").ToString().Split(" ")[1].Split("+")[0]
+          $ARCHIVE_NAME = "Venera-Windows-v$VERSION.zip"
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $ARCHIVE_NAME
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $env:GITHUB_ENV
+
       - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-windows
-          path: build/windows/x64/runner/Release/
+          name: ${{ env.ARCHIVE_NAME }}
+          path: "*.zip"
