@@ -171,7 +171,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       final provider = widget.image as ReaderImageProvider;
       enableAnime4K = appdata.settings.getReaderSetting(
         provider.cid,
-        provider.sourceKey,
+        provider.sourceKey ?? "",
         'enableAnime4K',
       );
     } else {
@@ -206,9 +206,9 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         final result = await Anime4KService.instance.processImage(
           imageBytes: imageBytes,
           cacheKey: provider.key,
-          scaleFactor: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey, 'anime4KScaleFactor') as num?)?.toDouble() ?? 2.0,
-          pushStrength: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey, 'anime4KPushStrength') as num?)?.toDouble() ?? 0.31,
-          pushGradStrength: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey, 'anime4KPushGradStrength') as num?)?.toDouble() ?? 1.0,
+          scaleFactor: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey ?? "", 'anime4KScaleFactor') as num?)?.toDouble() ?? 2.0,
+          pushStrength: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey ?? "", 'anime4KPushStrength') as num?)?.toDouble() ?? 0.31,
+          pushGradStrength: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey ?? "", 'anime4KPushGradStrength') as num?)?.toDouble() ?? 1.0,
         );
 
         if (result != null && mounted) {
