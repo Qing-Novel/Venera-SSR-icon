@@ -155,6 +155,16 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           comicId: isEnabledSpecificSettings ? widget.comicId : null,
           comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
         ).toSliver(),
+        _SwitchSetting(
+          title: "Enable Anime4K".tl,
+          settingKey: "enableAnime4K",
+          onChanged: () {
+            ComicImage.clear();
+            widget.onChanged?.call("enableAnime4K");
+          },
+          comicId: isEnabledSpecificSettings ? widget.comicId : null,
+          comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
+        ).toSliver(),
         SelectSetting(
           title: "Reading mode".tl,
           settingKey: "readerMode",
