@@ -1,3 +1,4 @@
+import "dart:io";
 part of 'reader.dart';
 
 class ComicImage extends StatefulWidget {
@@ -166,6 +167,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
 
   /// 触发图像超分处理
   Future<void> _triggerImageUpscale() async {
+    if (Platform.isWindows) return;
     // 检查是否启用了 Anime4K
     bool enableAnime4K = false;
     if (widget.image is ReaderImageProvider) {
