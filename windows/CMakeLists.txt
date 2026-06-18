@@ -58,10 +58,16 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
-# Fix C2338 error for plugins using experimental coroutines
+# Fix C2338 error for plugins using experimental coroutines.
+# Some plugins (e.g. flutter_inappwebview_windows) define their actual
+# library target as ${plugin}_plugin rather than ${plugin}, so apply the
+# suppression to both naming conventions.
 foreach(plugin ${FLUTTER_PLUGIN_LIST})
     if(TARGET ${plugin})
         target_compile_definitions(${plugin} PRIVATE "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
+    endif()
+    if(TARGET ${plugin}_plugin)
+        target_compile_definitions(${plugin}_plugin PRIVATE "_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS")
     endif()
 endforeach()
 
