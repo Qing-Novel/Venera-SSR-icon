@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -45,7 +46,54 @@ Future<Uint8List?> colorizeImage(ColorizationParams params) async {
   ));
 }
 
-/// 实际的上色实现
+// ===== Sobel 边缘检测 =====
+
+/// 使用 Sobel 算子在 256x256 灰度图上检测边缘，返回边缘强度图 (0-1)
+List<double> _sobelEdgeMask(img.Image grayImage) {
+  final w = grayImage.width;
+  final h = grayImage.height;
+  final mask = List<double>.filled(w * h, 0.0);
+
+  // 先计算灰度
+  final gray = List<double>.filled(w * h, 0.0);
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      final pixel = grayImage.getPixel(x, y);
+      gray[y * w + x] =
+          (img.getRed(pixel) * 0.299 + img.getGreen(pixel) * 0.587 + img.getBlue(pixel) * 0.114);
+    }
+  }
+
+  // Sobel 核
+  // Gx: -1 0 1   Gy: -1 -2 -1
+  //     -2 0 2        0  0  0
+  //     -1 0 1        1  2  1
+  for (int y = 1; y < h - 1; y++) {
+    for (int x = 1; x < w - 1; x++) {
+      final gx = -gray[(y - 1) * w + (x - 1)] +
+          gray[(y - 1) * w + (x + 1)] -
+          2 * gray[y * w + (x - 1)] +
+          2 * gray[y * w + (x + 1)] -
+          gray[(y + 1) * w + (x - 1)] +
+          gray[(y + 1) * w + (x + 1)];
+
+      final gy = -gray[(y - 1) * w + (x - 1)] -
+          2 * gray[(y - 1) * w + x] -
+          gray[(y - 1) * w + (x + 1)] +
+          gray[(y + 1) * w + (x - 1)] +
+          2 * gray[(y + 1) * w + x] +
+          gray[(y + 1) * w + (x + 1)];
+
+      final mag = math.sqrt(gx * gx + gy * gy);
+      // 归一化到 0–1：300 以上视为强边缘
+      mask[y * w + x] = (mag / 300.0).clamp(0.0, 1.0);
+    }
+  }
+
+  return mask;
+}
+
+// ===== 实际的上色实现 =====
 Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
   try {
     // 1. 解码输入图像
@@ -69,7 +117,6 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
     final input = Float32List(1 * 3 * 256 * 256);
     int offset = 0;
 
-    // 按通道顺序（R, G, B）填入
     for (int c = 0; c < 3; c++) {
       for (int y = 0; y < 256; y++) {
         for (int x = 0; x < 256; x++) {
@@ -93,7 +140,6 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       return null;
     }
 
-    // 确保环境已初始化
     OrtEnv.instance.init();
 
     final session = OrtSession.fromFile(
@@ -103,24 +149,16 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
 
     try {
       final runOptions = OrtRunOptions();
-
-      // 构造 OrtValueTensor 输入
       final inputTensor = OrtValueTensor.createTensorWithDataList(
         input,
         [1, 3, 256, 256],
       );
 
-      final inputs = {'input': inputTensor};
+      final outputs = session.run(runOptions, {'input': inputTensor});
 
-      // 执行推理
-      final outputs = session.run(runOptions, inputs);
+      if (outputs.isEmpty) return null;
 
-      // 5. 处理输出
-      if (outputs.isEmpty) {
-        return null;
-      }
-
-      // 从输出张量提取 Float32List 数据
+      // 5. 从输出张量提取 Float32List
       final outputValue = outputs.values.first;
       Float32List outputFloats;
 
@@ -131,7 +169,6 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
           outputValue.cast<num>().map((e) => e.toDouble()).toList(),
         );
       } else {
-        // 尝试访问 data 属性（一些版本的 OrtValueTensor 有 data 属性）
         try {
           final data = (outputValue as dynamic).data;
           if (data is Float32List) {
@@ -148,58 +185,31 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         }
       }
 
-      // 6. 将输出 [1, 3, 256, 256] float32 转 uint8 RGB 图像
-      // 裁剪到 [0, 255] 范围
-      final colored256 = img.Image(width: 256, height: 256);
+      // 6. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像
+      final modelRgb = img.Image(width: 256, height: 256);
       for (int y = 0; y < 256; y++) {
         for (int x = 0; x < 256; x++) {
           final idx = y * 256 + x;
-          // 输出格式: [1, 3, 256, 256] - 通道优先
           final rIdx = 0 * 256 * 256 + idx;
           final gIdx = 1 * 256 * 256 + idx;
           final bIdx = 2 * 256 * 256 + idx;
 
-          double r;
-          double g;
-          double b;
-
-          // 确保索引不越界
+          double r, g, b;
           if (rIdx < outputFloats.length &&
               gIdx < outputFloats.length &&
               bIdx < outputFloats.length) {
-            r = outputFloats[rIdx];
-            g = outputFloats[gIdx];
-            b = outputFloats[bIdx];
+            r = outputFloats[rIdx].clamp(0.0, 255.0);
+            g = outputFloats[gIdx].clamp(0.0, 255.0);
+            b = outputFloats[bIdx].clamp(0.0, 255.0);
           } else {
-            // 备用: 可能输出是 [1, 256, 256, 3] 格式
+            // 备用：NHWC 格式 [1, 256, 256, 3]
             final flatIdx = idx * 3;
-            if (flatIdx + 2 < outputFloats.length) {
-              r = outputFloats[flatIdx];
-              g = outputFloats[flatIdx + 1];
-              b = outputFloats[flatIdx + 2];
-            } else {
-              r = g = b = 0.0;
-            }
+            r = outputFloats[flatIdx].clamp(0.0, 255.0);
+            g = outputFloats[flatIdx + 1].clamp(0.0, 255.0);
+            b = outputFloats[flatIdx + 2].clamp(0.0, 255.0);
           }
 
-          // 裁剪到 [0, 255] 范围
-          r = r.clamp(0.0, 255.0);
-          g = g.clamp(0.0, 255.0);
-          b = b.clamp(0.0, 255.0);
-
-          // 应用 intensity 调整（相对于原图灰度做混合）
-          if (params.intensity != 1.0) {
-            final origPixel = resized.getPixel(x, y);
-            final gray = (img.getRed(origPixel) +
-                    img.getGreen(origPixel) +
-                    img.getBlue(origPixel)) /
-                3.0;
-            r = gray + (r - gray) * params.intensity;
-            g = gray + (g - gray) * params.intensity;
-            b = gray + (b - gray) * params.intensity;
-          }
-
-          colored256.setPixelRgb(
+          modelRgb.setPixelRgb(
             x,
             y,
             r.round().clamp(0, 255),
@@ -209,15 +219,91 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         }
       }
 
-      // 7. 缩放到原图尺寸
+      // ============== 以下为修正后的后处理（与 colorize.py 一致） ==============
+
+      // 7. Sobel 边缘检测：识别漫画中的黑色线条区域
+      final edgeMask = _sobelEdgeMask(resized);
+
+      // 8. 亮度检测 + 边缘抑制：
+      //    - 边缘区域（黑色线条）：抑制颜色，保留原图灰度
+      //    - 非常亮的区域（白纸）：抑制颜色
+      //    - 非常暗的区域（纯黑线条）：抑制颜色
+      //    - 其他区域：保留模型输出的颜色
+      final mixedRgb = img.Image(width: 256, height: 256);
+
+      for (int y = 0; y < 256; y++) {
+        for (int x = 0; x < 256; x++) {
+          final origPixel = resized.getPixel(x, y);
+          final origR = img.getRed(origPixel);
+          final origG = img.getGreen(origPixel);
+          final origB = img.getBlue(origPixel);
+
+          final origLuminance =
+              (origR * 0.299 + origG * 0.587 + origB * 0.114).toDouble();
+
+          final coloredPixel = modelRgb.getPixel(x, y);
+          final coloredR = img.getRed(coloredPixel).toDouble();
+          final coloredG = img.getGreen(coloredPixel).toDouble();
+          final coloredB = img.getBlue(coloredPixel).toDouble();
+
+          final edgeStrength = edgeMask[y * 256 + x];
+
+          // 抑制权重 (0 = 完全保留颜色, 1 = 完全变回原图)
+          double suppress = 0.0;
+
+          // 8a. 边缘区域（漫画黑色线条）
+          if (edgeStrength > 0.15) {
+            suppress = math.min(1.0, edgeStrength * 2.5);
+          }
+
+          // 8b. 非常亮的区域（白纸背景）
+          if (origLuminance > 235) {
+            final brightFactor =
+                ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
+            suppress = math.max(suppress, brightFactor);
+          }
+
+          // 8c. 非常暗的区域（纯黑线条）
+          if (origLuminance < 25) {
+            final darkFactor = ((25 - origLuminance) / 25.0).clamp(0.0, 1.0);
+            suppress = math.max(suppress, darkFactor);
+          }
+
+          // 混合：抑制区域回退到原图灰度
+          final gray = origLuminance;
+          double finalR = coloredR + (gray - coloredR) * suppress;
+          double finalG = coloredG + (gray - coloredG) * suppress;
+          double finalB = coloredB + (gray - coloredB) * suppress;
+
+          // 8d. intensity 调整：控制整体上色强度
+          if (params.intensity != 1.0) {
+            finalR = gray + (finalR - gray) * params.intensity;
+            finalG = gray + (finalG - gray) * params.intensity;
+            finalB = gray + (finalB - gray) * params.intensity;
+          }
+
+          mixedRgb.setPixelRgb(
+            x,
+            y,
+            finalR.round().clamp(0, 255),
+            finalG.round().clamp(0, 255),
+            finalB.round().clamp(0, 255),
+          );
+        }
+      }
+
+      // 9. 高斯模糊（半径 1）：柔化色彩边界，减少模型的高频噪点
+      final blurred = img.copyGaussianBlur(mixedRgb, radius: 1);
+
+      // 10. 缩放到原图尺寸
       final finalImage = img.copyResize(
-        colored256,
+        blurred,
         width: originalWidth,
         height: originalHeight,
         interpolation: img.Interpolation.linear,
       );
 
-      // 8. 编码 PNG
+      // 11. 编码 PNG
       final pngBytes = img.encodePng(finalImage);
       return Uint8List.fromList(pngBytes);
     } finally {
@@ -241,7 +327,6 @@ class ColorizationModelManager {
     final targetPath = path.join(dir.path, 'deoldify_artistic.onnx');
     final targetFile = File(targetPath);
 
-    // 如果文件已存在就不再复制
     if (!await targetFile.exists()) {
       final byteData = await rootBundle.load(assetPath);
       final bytes = byteData.buffer
