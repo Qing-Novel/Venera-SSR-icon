@@ -534,23 +534,14 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         return result;
       } else if (_upscaledBytes != null && _imageInfo != null) {
         // 使用超分后的图像
-        Widget result = RawImage(
-          image: _imageInfo!.image,
-          debugImageLabel: _imageInfo?.debugLabel,
+        Widget result = Image.memory(
+          _upscaledBytes!,
           width: width,
           height: height,
-          scale: _imageInfo?.scale ?? 1.0,
-          color: widget.color,
-          opacity: widget.opacity,
-          colorBlendMode: widget.colorBlendMode,
-          fit: widget.fit,
+          fit: widget.fit ?? BoxFit.contain,
+          filterQuality: widget.filterQuality,
           alignment: widget.alignment,
           repeat: widget.repeat,
-          centerSlice: widget.centerSlice,
-          matchTextDirection: widget.matchTextDirection,
-          invertColors: _invertColors,
-          isAntiAlias: widget.isAntiAlias,
-          filterQuality: widget.filterQuality,
         );
         if (!widget.excludeFromSemantics) {
           result = Semantics(
