@@ -72,19 +72,17 @@ List<double> _sobelEdgeMask(img.Image grayImage) {
   //     -1 0 1        1  2  1
   for (int y = 1; y < h - 1; y++) {
     for (int x = 1; x < w - 1; x++) {
-      final gx = -gray[(y - 1) * w + (x - 1)] +
-          gray[(y - 1) * w + (x + 1) -
-          2 * gray[y * w + (x - 1)] +
-          2 * gray[y * w + (x + 1)] -
-          gray[(y + 1) * w + (x - 1)] +
-          gray[(y + 1) * w + (x + 1)];
+      final tl = gray[(y - 1) * w + (x - 1)];
+      final tr = gray[(y - 1) * w + (x + 1)];
+      final ml = gray[y * w + (x - 1)];
+      final mr = gray[y * w + (x + 1)];
+      final bl = gray[(y + 1) * w + (x - 1)];
+      final br = gray[(y + 1) * w + (x + 1)];
+      final t = gray[(y - 1) * w + x];
+      final b = gray[(y + 1) * w + x];
 
-      final gy = -gray[(y - 1) * w + (x - 1)] -
-          2 * gray[(y - 1) * w + x]] -
-          gray[(y - 1) * w + (x + 1)] +
-          gray[(y + 1) * w + (x - 1)] +
-          2 * gray[(y + 1) * w + x]] +
-          gray[(y + 1) * w + (x + 1)];
+      final gx = -tl + tr - 2 * ml + 2 * mr - bl + br;
+      final gy = -tl - 2 * t - tr + bl + 2 * b + br;
 
       final mag = math.sqrt(gx * gx + gy * gy);
       // 归一化到 0–1：300 以上视为强边缘
@@ -300,7 +298,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       }
 
       // 9. 高斯模糊（半径 1）：柔化色彩边界，减少模型的高频噪点
-      final blurred = img.copyGaussianBlur(mixedRgb, radius: 1);
+      final blurred = img.gaussianBlur(mixedRgb, radius: 1);
 
       // 10. 缩放到原图尺寸
       final finalImage = img.copyResize(
