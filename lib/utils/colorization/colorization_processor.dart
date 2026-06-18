@@ -59,8 +59,10 @@ List<double> _sobelEdgeMask(img.Image grayImage) {
   for (int y = 0; y < h; y++) {
     for (int x = 0; x < w; x++) {
       final pixel = grayImage.getPixel(x, y);
-      gray[y * w + x] =
-          (img.getRed(pixel) * 0.299 + img.getGreen(pixel) * 0.587 + img.getBlue(pixel) * 0.114);
+      final r = pixel.r.toDouble();
+      final g = pixel.g.toDouble();
+      final b = pixel.b.toDouble();
+      gray[y * w + x] = (r + g + g + g + b) / 6.0;
     }
   }
 
@@ -71,17 +73,17 @@ List<double> _sobelEdgeMask(img.Image grayImage) {
   for (int y = 1; y < h - 1; y++) {
     for (int x = 1; x < w - 1; x++) {
       final gx = -gray[(y - 1) * w + (x - 1)] +
-          gray[(y - 1) * w + (x + 1)] -
+          gray[(y - 1) * w + (x + 1) -
           2 * gray[y * w + (x - 1)] +
           2 * gray[y * w + (x + 1)] -
           gray[(y + 1) * w + (x - 1)] +
           gray[(y + 1) * w + (x + 1)];
 
       final gy = -gray[(y - 1) * w + (x - 1)] -
-          2 * gray[(y - 1) * w + x] -
+          2 * gray[(y - 1) * w + x]] -
           gray[(y - 1) * w + (x + 1)] +
           gray[(y + 1) * w + (x - 1)] +
-          2 * gray[(y + 1) * w + x] +
+          2 * gray[(y + 1) * w + x]] +
           gray[(y + 1) * w + (x + 1)];
 
       final mag = math.sqrt(gx * gx + gy * gy);
@@ -93,14 +95,44 @@ List<double> _sobelEdgeMask(img.Image grayImage) {
   return mask;
 }
 
+// ===== 从 OrtValue 中提取 Float32List =====
+
+Float32List? _extractFloat32List(OrtValue? value) {
+  if (value == null) return null;
+
+  try {
+    // OrtValue 对象通常会是一个包装对象，尝试多种方式访问数据
+    // 方式1: 直接通过 value.value 访问
+    final val = value.value;
+    if (val is Float32List) return val;
+    if (val is List<double>) return Float32List.fromList(val.cast<num>().map((e) => e.toDouble()).toList());
+    if (val is List) return Float32List.fromList(val.cast<num>().map((e) => e.toDouble()).toList());
+  } catch (_) {}
+
+  try {
+    // 方式2: 尝试访问 data 属性
+    final data = (value as dynamic).data;
+    if (data is Float32List) return data;
+    if (data is List<double>) return Float32List.fromList(data);
+    if (data is List) return Float32List.fromList(data.cast<num>().map((e) => e.toDouble()).toList());
+  } catch (_) {}
+
+  try {
+    // 方式3: 尝试访问 tensorData 属性
+    final tensorData = (value as dynamic).tensorData;
+    if (tensorData is Float32List) return tensorData;
+    if (tensorData is List<double>) return Float32List.fromList(tensorData);
+  } catch (_) {}
+
+  return null;
+}
+
 // ===== 实际的上色实现 =====
 Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
   try {
     // 1. 解码输入图像
     final decoded = img.decodeImage(params.imageBytes);
-    if (decoded == null) {
-      return null;
-    }
+    if (decoded == null) return null;
 
     final originalWidth = decoded.width;
     final originalHeight = decoded.height;
@@ -123,11 +155,11 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
           final pixel = resized.getPixel(x, y);
           double value;
           if (c == 0) {
-            value = img.getRed(pixel).toDouble();
+            value = pixel.r.toDouble();
           } else if (c == 1) {
-            value = img.getGreen(pixel).toDouble();
+            value = pixel.g.toDouble();
           } else {
-            value = img.getBlue(pixel).toDouble();
+            value = pixel.b.toDouble();
           }
           input[offset++] = value;
         }
@@ -143,7 +175,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
     OrtEnv.instance.init();
 
     final session = OrtSession.fromFile(
-      params.modelPath,
+      modelFile,
       OrtSessionOptions(),
     );
 
@@ -159,31 +191,8 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       if (outputs.isEmpty) return null;
 
       // 5. 从输出张量提取 Float32List
-      final outputValue = outputs.values.first;
-      Float32List outputFloats;
-
-      if (outputValue is Float32List) {
-        outputFloats = outputValue;
-      } else if (outputValue is List) {
-        outputFloats = Float32List.fromList(
-          outputValue.cast<num>().map((e) => e.toDouble()).toList(),
-        );
-      } else {
-        try {
-          final data = (outputValue as dynamic).data;
-          if (data is Float32List) {
-            outputFloats = data;
-          } else if (data is List) {
-            outputFloats = Float32List.fromList(
-              data.cast<num>().map((e) => e.toDouble()).toList(),
-            );
-          } else {
-            return null;
-          }
-        } catch (e) {
-          return null;
-        }
-      }
+      final outputFloats = _extractFloat32List(outputs.first);
+      if (outputFloats == null) return null;
 
       // 6. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像
       final modelRgb = img.Image(width: 256, height: 256);
@@ -234,17 +243,16 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       for (int y = 0; y < 256; y++) {
         for (int x = 0; x < 256; x++) {
           final origPixel = resized.getPixel(x, y);
-          final origR = img.getRed(origPixel);
-          final origG = img.getGreen(origPixel);
-          final origB = img.getBlue(origPixel);
+          final origR = origPixel.r.toDouble();
+          final origG = origPixel.g.toDouble();
+          final origB = origPixel.b.toDouble();
 
-          final origLuminance =
-              (origR * 0.299 + origG * 0.587 + origB * 0.114).toDouble();
+          final origLuminance = (origR + origG * 2 + origB) / 4;
 
           final coloredPixel = modelRgb.getPixel(x, y);
-          final coloredR = img.getRed(coloredPixel).toDouble();
-          final coloredG = img.getGreen(coloredPixel).toDouble();
-          final coloredB = img.getBlue(coloredPixel).toDouble();
+          final coloredR = coloredPixel.r.toDouble();
+          final coloredG = coloredPixel.g.toDouble();
+          final coloredB = coloredPixel.b.toDouble();
 
           final edgeStrength = edgeMask[y * 256 + x];
 
@@ -258,8 +266,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
 
           // 8b. 非常亮的区域（白纸背景）
           if (origLuminance > 235) {
-            final brightFactor =
-                ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
+            final brightFactor = ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
             suppress = math.max(suppress, brightFactor);
           }
 

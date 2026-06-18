@@ -1,7 +1,5 @@
 part of 'settings_page.dart';
 
-import 'package:venera/utils/colorization/colorization_service.dart';
-
 /// 图像上色设置页
 ///
 /// 参考 Anime4K 设置页的模式。提供开关和强度调节。
