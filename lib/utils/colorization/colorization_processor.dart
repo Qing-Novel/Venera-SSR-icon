@@ -3,11 +3,11 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
+import 'package:dio/dio.dart';
 
 /// 图像上色参数
 class ColorizationParams {
@@ -319,34 +319,120 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
   }
 }
 
-/// 模型管理器：负责从 assets 提取模型到应用目录
+/// 模型管理器：负责从网络下载模型到应用目录
+///
+/// 不使用 Flutter assets 打包模型（模型文件 243MB 会导致 Android APK 构建失败），
+/// 改为应用首次启动时从 GitHub Releases 下载到应用支持目录。
 class ColorizationModelManager {
-  static const assetPath = 'assets/deoldify_artistic.onnx';
-  static String? _cachedModelPath;
+  static const modelFileName = 'deoldify_artistic.onnx';
+  static const expectedFileSize = 243 * 1024 * 1024; // ~243MB
+  static const modelDownloadUrls = [
+    'https://ghp.ci/https://github.com/instant-high/deoldify-onnx/releases/download/deoldify-onnx/deoldify.onnx',
+    'https://github.com/instant-high/deoldify-onnx/releases/download/deoldify-onnx/deoldify.onnx',
+  ];
 
-  /// 获取模型文件路径（从 asset 复制到临时目录）
+  static String? _cachedModelPath;
+  static bool _isDownloading = false;
+  static double _downloadProgress = 0.0;
+
+  /// 获取模型文件路径（从网络下载到应用支持目录）
   static Future<String> ensureModelAvailable() async {
     if (_cachedModelPath != null) return _cachedModelPath!;
 
     final dir = await getApplicationSupportDirectory();
-    final targetPath = path.join(dir.path, 'deoldify_artistic.onnx');
+    final targetPath = path.join(dir.path, modelFileName);
     final targetFile = File(targetPath);
 
-    if (!await targetFile.exists()) {
-      final byteData = await rootBundle.load(assetPath);
-      final bytes = byteData.buffer
-          .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes);
-      await targetFile.writeAsBytes(bytes, flush: true);
+    // 检查是否已存在且大小合理
+    if (await targetFile.exists()) {
+      final size = await targetFile.length();
+      if (size > expectedFileSize ~/ 2) {
+        _cachedModelPath = targetPath;
+        return targetPath;
+      }
+      // 文件不完整，重新下载
+      await targetFile.delete();
     }
 
-    _cachedModelPath = targetPath;
-    return targetPath;
+    if (_isDownloading) {
+      // 等待另一个下载完成
+      while (_isDownloading) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      if (_cachedModelPath != null) return _cachedModelPath!;
+    }
+
+    _isDownloading = true;
+    _downloadProgress = 0.0;
+
+    try {
+      await _downloadModel(targetPath);
+      _cachedModelPath = targetPath;
+      return targetPath;
+    } finally {
+      _isDownloading = false;
+    }
   }
+
+  /// 从网络下载模型文件（支持多 URL 重试）
+  static Future<void> _downloadModel(String targetPath) async {
+    for (int i = 0; i < modelDownloadUrls.length; i++) {
+      try {
+        await _downloadWithDio(modelDownloadUrls[i], targetPath);
+        final downloaded = await File(targetPath).length();
+        if (downloaded > expectedFileSize ~/ 2) {
+          return;
+        }
+        await File(targetPath).delete();
+      } catch (e) {
+        if (i == modelDownloadUrls.length - 1) rethrow;
+        // 尝试下一个 URL
+      }
+    }
+    throw Exception('All model download URLs failed');
+  }
+
+  /// 使用 dio 下载文件（支持进度回调）
+  static Future<void> _downloadWithDio(String url, String targetPath) async {
+    final dioInstance = Dio();
+    try {
+      await dioInstance.download(
+        url,
+        targetPath,
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            _downloadProgress = received / total;
+          }
+        },
+        options: Options(
+          receiveTimeout: const Duration(minutes: 10),
+          sendTimeout: const Duration(minutes: 2),
+        ),
+      );
+    } finally {
+      dioInstance.close();
+    }
+  }
+
+  /// 模型是否已下载
+  static Future<bool> get isModelDownloaded async {
+    if (_cachedModelPath != null) return true;
+    final dir = await getApplicationSupportDirectory();
+    final targetPath = path.join(dir.path, modelFileName);
+    final targetFile = File(targetPath);
+    return await targetFile.exists();
+  }
+
+  /// 获取下载进度（0.0 - 1.0）
+  static double get downloadProgress => _downloadProgress;
+
+  /// 是否正在下载
+  static bool get isDownloading => _isDownloading;
 
   /// 清除模型文件
   static Future<void> clearModel() async {
     final dir = await getApplicationSupportDirectory();
-    final targetPath = path.join(dir.path, 'deoldify_artistic.onnx');
+    final targetPath = path.join(dir.path, modelFileName);
     final targetFile = File(targetPath);
     if (await targetFile.exists()) {
       await targetFile.delete();

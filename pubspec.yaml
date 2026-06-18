@@ -110,7 +110,7 @@ flutter:
     - assets/tags.json
     - assets/tags_tw.json
     - assets/opencc.txt
-    - assets/deoldify_artistic.onnx
+# 注: deoldify_artistic.onnx 不打包到 assets，改为运行时下载
 # fonts:
 
 flutter_to_arch:
