@@ -1,7 +1,6 @@
 name: Build macOS
 on:
   push:
-    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
