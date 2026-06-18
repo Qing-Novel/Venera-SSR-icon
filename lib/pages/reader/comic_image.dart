@@ -88,6 +88,10 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
   Uint8List? _upscaledBytes;
   bool _isUpscaling = false;
 
+  // 图像上色相关变量
+  Uint8List? _colorizedBytes;
+  bool _isColorizing = false;
+
   static final Map<int, Size> _cache = {};
 
   static clear() => _cache.clear();
@@ -117,6 +121,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     _updateInvertColors();
     _resolveImage();
     _triggerImageUpscale();
+    _triggerImageColorization();
 
     if (TickerMode.of(context)) {
       _listenToStream();
@@ -133,6 +138,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     if (widget.image != oldWidget.image) {
       _resolveImage();
       _triggerImageUpscale();
+      _triggerImageColorization();
     }
   }
 
@@ -225,6 +231,71 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     } catch (e) {
       Log.error('ComicImage', 'Anime4K processing error: $e');
       _isUpscaling = false;
+    }
+  }
+
+  /// 触发图像上色处理
+  Future<void> _triggerImageColorization() async {
+    // 检查是否启用了上色功能
+    bool enableColorization = false;
+    if (widget.image is ReaderImageProvider) {
+      final provider = widget.image as ReaderImageProvider;
+      enableColorization = appdata.settings.getReaderSetting(
+        provider.cid,
+        provider.sourceKey ?? "",
+        'enableColorization',
+      );
+    } else {
+      enableColorization = appdata.settings['enableColorization'] == true;
+    }
+
+    if (!enableColorization) {
+      if (_colorizedBytes != null) {
+        setState(() {
+          _colorizedBytes = null;
+        });
+      }
+      return;
+    }
+
+    if (_colorizedBytes != null || _isColorizing) return;
+
+    _isColorizing = true;
+
+    try {
+      // 从 ReaderImageProvider 获取图像数据
+      if (widget.image is ReaderImageProvider) {
+        final provider = widget.image as ReaderImageProvider;
+        final chunkController = StreamController<ImageChunkEvent>();
+        chunkController.stream.listen(null, onError: (_) {});
+        final imageBytes = await provider.load(
+          chunkController,
+          () {},
+        );
+        unawaited(chunkController.close());
+
+        final result = await ColorizationService.instance.processImage(
+          imageBytes: imageBytes,
+          cacheKey: provider.key,
+          intensity: (appdata.settings.getReaderSetting(
+                provider.cid,
+                provider.sourceKey ?? "",
+                'colorizationIntensity',
+              ) as num?)?.toDouble() ?? 1.0,
+        );
+
+        if (result != null && mounted) {
+          setState(() {
+            _colorizedBytes = result;
+            _isColorizing = false;
+          });
+        } else {
+          _isColorizing = false;
+        }
+      }
+    } catch (e) {
+      Log.error('ComicImage', 'Colorization processing error: $e');
+      _isColorizing = false;
     }
   }
 
@@ -434,7 +505,34 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         }
       }
 
-      if (_upscaledBytes != null && _imageInfo != null) {
+      if (_colorizedBytes != null && _imageInfo != null) {
+        // 使用上色后的图像
+        Widget result = Image.memory(
+          _colorizedBytes!,
+          width: width,
+          height: height,
+          fit: widget.fit ?? BoxFit.contain,
+          filterQuality: widget.filterQuality,
+          alignment: widget.alignment,
+          repeat: widget.repeat,
+        );
+        if (!widget.excludeFromSemantics) {
+          result = Semantics(
+            container: widget.semanticLabel != null,
+            image: true,
+            label: widget.semanticLabel ?? '',
+            child: result,
+          );
+        }
+        result = SizedBox(
+          width: width,
+          height: height,
+          child: Center(
+            child: result,
+          ),
+        );
+        return result;
+      } else if (_upscaledBytes != null && _imageInfo != null) {
         // 使用超分后的图像
         Widget result = RawImage(
           image: _imageInfo!.image,

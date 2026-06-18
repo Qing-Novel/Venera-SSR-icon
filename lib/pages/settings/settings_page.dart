@@ -32,6 +32,7 @@ part 'about.dart';
 part 'network.dart';
 part 'debug.dart';
 part 'anime4k.dart';
+part 'colorization.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({this.initialPage = -1, super.key});
@@ -58,6 +59,7 @@ class _SettingsPageState extends State<SettingsPage> {
     "Network",
     "About",
     "Anime4K",
+    "Colorization",
     "Debug"
   ];
 
@@ -70,6 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
     Icons.public,
     Icons.info,
     Icons.auto_awesome,
+    Icons.palette,
     Icons.bug_report,
   ];
 
@@ -267,7 +270,8 @@ class _SettingsPageState extends State<SettingsPage> {
       5 => const NetworkSettings(),
       6 => const AboutSettings(),
       7 => const Anime4KSettings(),
-      8 => const DebugPage(),
+      8 => const ColorizationSettings(),
+      9 => const DebugPage(),
       _ => throw UnimplementedError()
     };
   }
@@ -294,7 +298,8 @@ class _SettingsDetailPage extends StatelessWidget {
       5 => const NetworkSettings(),
       6 => const AboutSettings(),
       7 => const Anime4KSettings(),
-      8 => const DebugPage(),
+      8 => const ColorizationSettings(),
+      9 => const DebugPage(),
       _ => throw UnimplementedError()
     };
   }
