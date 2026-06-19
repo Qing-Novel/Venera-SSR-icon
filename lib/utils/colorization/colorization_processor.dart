@@ -45,53 +45,6 @@ Future<Uint8List?> colorizeImage(ColorizationParams params) async {
   ));
 }
 
-// ===== Sobel 边缘检测 =====
-
-/// 使用 Sobel 算子在 256x256 灰度图上检测边缘，返回边缘强度图 (0-1)
-List<double> _sobelEdgeMask(img.Image grayImage) {
-  final w = grayImage.width;
-  final h = grayImage.height;
-  final mask = List<double>.filled(w * h, 0.0);
-
-  // 先计算灰度
-  final gray = List<double>.filled(w * h, 0.0);
-  for (int y = 0; y < h; y++) {
-    for (int x = 0; x < w; x++) {
-      final pixel = grayImage.getPixel(x, y);
-      final r = pixel.r.toDouble();
-      final g = pixel.g.toDouble();
-      final b = pixel.b.toDouble();
-      gray[y * w + x] = (r + g + g + g + b) / 6.0;
-    }
-  }
-
-  // Sobel 核
-  // Gx: -1 0 1   Gy: -1 -2 -1
-  //     -2 0 2        0  0  0
-  //     -1 0 1        1  2  1
-  for (int y = 1; y < h - 1; y++) {
-    for (int x = 1; x < w - 1; x++) {
-      final tl = gray[(y - 1) * w + (x - 1)];
-      final tr = gray[(y - 1) * w + (x + 1)];
-      final ml = gray[y * w + (x - 1)];
-      final mr = gray[y * w + (x + 1)];
-      final bl = gray[(y + 1) * w + (x - 1)];
-      final br = gray[(y + 1) * w + (x + 1)];
-      final t = gray[(y - 1) * w + x];
-      final b = gray[(y + 1) * w + x];
-
-      final gx = -tl + tr - 2 * ml + 2 * mr - bl + br;
-      final gy = -tl - 2 * t - tr + bl + 2 * b + br;
-
-      final mag = math.sqrt(gx * gx + gy * gy);
-      // 归一化到 0–1：300 以上视为强边缘
-      mask[y * w + x] = (mag / 300.0).clamp(0.0, 1.0);
-    }
-  }
-
-  return mask;
-}
-
 // ===== 从 OrtValue 中提取 Float32List =====
 
 Float32List? _extractFloat32List(OrtValue? value) {
@@ -124,6 +77,218 @@ Float32List? _extractFloat32List(OrtValue? value) {
   return null;
 }
 
+// ===== OpenCV 风格的颜色空间转换 =====
+//
+// 参照 deoldify-onnx 官方实现（color/deoldify.py），后处理使用 LAB 颜色空间
+// 合并原始 L 通道与模型输出的 A/B 通道。由于 Flutter/Dart 端无法直接引入
+// Python 的 cv2，这里用 Dart 实现等价的 OpenCV RGB<->LAB 转换。
+
+/// 参考白点 D65（OpenCV 使用值）
+const double _labXn = 0.950456;
+const double _labYn = 1.0;
+const double _labZn = 1.088754;
+
+/// 8-bit sRGB -> 线性 RGB [0, 1] 查找表，避免每像素重复 math.pow。
+final Float64List _inverseGammaLut = Float64List.generate(256, (i) {
+  final c = i.toDouble();
+  if (c <= 0.04045 * 255.0) {
+    return c / (12.92 * 255.0);
+  }
+  return math.pow((c / 255.0 + 0.055) / 1.055, 2.4).toDouble();
+});
+
+/// 将线性 RGB [0, 1] 做 sRGB gamma 校正为 8-bit。
+double _srgbGamma(double c) {
+  if (c <= 0.0031308) {
+    return c * 12.92 * 255.0;
+  }
+  return ((math.pow(c, 1.0 / 2.4).toDouble() * 1.055) - 0.055) * 255.0;
+}
+
+/// OpenCV 风格的 RGB -> LAB。
+///
+/// 输入 r, g, b 为 [0, 255]，输出 (L, A, B) 为 OpenCV uint8 编码：
+/// L in [0, 255]，A/B in [0, 255]（中性灰为 128）。
+(double, double, double) rgbToLab(double r, double g, double b) {
+  final ri = r.round().clamp(0, 255);
+  final gi = g.round().clamp(0, 255);
+  final bi = b.round().clamp(0, 255);
+  final lr = _inverseGammaLut[ri];
+  final lg = _inverseGammaLut[gi];
+  final lb = _inverseGammaLut[bi];
+
+  double x = lr * 0.412453 + lg * 0.357580 + lb * 0.180423;
+  double y = lr * 0.212671 + lg * 0.715160 + lb * 0.072169;
+  double z = lr * 0.019334 + lg * 0.119193 + lb * 0.950227;
+
+  x /= _labXn;
+  y /= _labYn;
+  z /= _labZn;
+
+  double f(double t) {
+    if (t > 0.008856) {
+      return math.pow(t, 1.0 / 3.0).toDouble();
+    }
+    return 7.787 * t + 16.0 / 116.0;
+  }
+
+  final fy = f(y);
+  final l = 116.0 * fy - 16.0;
+  final a = 500.0 * (f(x) - fy);
+  final bb = 200.0 * (fy - f(z));
+
+  // 映射到 OpenCV uint8 范围
+  return (
+    l.clamp(0.0, 100.0) * 2.55,
+    (a + 128.0).clamp(0.0, 255.0),
+    (bb + 128.0).clamp(0.0, 255.0),
+  );
+}
+
+/// OpenCV 风格的 LAB -> RGB。
+///
+/// 输入 (L, A, B) 为 OpenCV uint8 编码，输出 (r, g, b) 为 [0, 255]。
+(double, double, double) labToRgb(double l, double a, double b) {
+  // 从 OpenCV uint8 范围还原到 CIE LAB 自然范围
+  final ll = l / 2.55;
+  final aa = a - 128.0;
+  final bb = b - 128.0;
+
+  final fy = (ll + 16.0) / 116.0;
+  final fx = aa / 500.0 + fy;
+  final fz = fy - bb / 200.0;
+
+  double fInv(double t) {
+    final t3 = t * t * t;
+    if (t3 > 0.008856) {
+      return t3;
+    }
+    return (t - 16.0 / 116.0) / 7.787;
+  }
+
+  double x = fInv(fx) * _labXn;
+  double y = fInv(fy) * _labYn;
+  double z = fInv(fz) * _labZn;
+
+  // XYZ -> linear RGB
+  final lr = x * 3.240481 + y * -1.537151 + z * -0.498536;
+  final lg = x * -0.969254 + y * 1.875990 + z * 0.041556;
+  final lb = x * 0.055646 + y * -0.203994 + z * 1.057069;
+
+  return (
+    _srgbGamma(lr).clamp(0.0, 255.0),
+    _srgbGamma(lg).clamp(0.0, 255.0),
+    _srgbGamma(lb).clamp(0.0, 255.0),
+  );
+}
+
+/// 生成与 OpenCV cv2.GaussianBlur(ksize=(13,13), sigma=0) 等价的一维核。
+Float64List gaussianKernel13() {
+  const int k = 13;
+  const int center = k ~/ 2;
+  // OpenCV 在 sigma=0 时按 ksize 计算 sigma
+  final sigma = 0.3 * ((k - 1) * 0.5 - 1) + 0.8;
+  final denom = 2.0 * sigma * sigma;
+  final kernel = Float64List(k);
+  double sum = 0.0;
+  for (int i = 0; i < k; i++) {
+    final v = math.exp(-((i - center) * (i - center)) / denom);
+    kernel[i] = v;
+    sum += v;
+  }
+  for (int i = 0; i < k; i++) {
+    kernel[i] /= sum;
+  }
+  return kernel;
+}
+
+/// OpenCV BORDER_REFLECT_101 风格的边界插值。
+///
+/// 例如长度为 n 的序列：... 2 1 | 0 1 2 ... n-3 n-2 | n-1 n-2 n-3 ...
+int _reflect101(int p, int len) {
+  if (len <= 1) return 0;
+  if (p < 0) {
+    p = -p;
+  } else if (p >= len) {
+    p = len - 1 - (p - (len - 1));
+  } else {
+    return p;
+  }
+  // 极少数情况下反射后仍越界，递归处理
+  return _reflect101(p, len);
+}
+
+/// 13x13 可分离高斯模糊（等价于 OpenCV (13,13), sigmaX=0）。
+///
+/// 对 [src] 的 RGB 三通道分别做水平+垂直卷积，结果写入 [dst]。
+/// 两个图像必须同宽高、同通道数，且只处理 RGB 通道（若有 Alpha 则原样复制）。
+void _gaussianBlur13({
+  required Uint8List src,
+  required Uint8List dst,
+  required int width,
+  required int height,
+  required int channels,
+}) {
+  final kernel = gaussianKernel13();
+  const int radius = 6;
+
+  // 水平方向：src -> tmp
+  final tmp = Uint8List(width * height * channels);
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final base = (y * width + x) * channels;
+      for (int c = 0; c < 3; c++) {
+        double acc = 0.0;
+        for (int k = 0; k < kernel.length; k++) {
+          final sx = _reflect101(x + k - radius, width);
+          acc += src[(y * width + sx) * channels + c] * kernel[k];
+        }
+        tmp[base + c] = acc.round().clamp(0, 255);
+      }
+      if (channels == 4) {
+        tmp[base + 3] = src[base + 3];
+      }
+    }
+  }
+
+  // 垂直方向：tmp -> dst
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final base = (y * width + x) * channels;
+      for (int c = 0; c < 3; c++) {
+        double acc = 0.0;
+        for (int k = 0; k < kernel.length; k++) {
+          final sy = _reflect101(y + k - radius, height);
+          acc += tmp[(sy * width + x) * channels + c] * kernel[k];
+        }
+        dst[base + c] = acc.round().clamp(0, 255);
+      }
+      if (channels == 4) {
+        dst[base + 3] = src[base + 3];
+      }
+    }
+  }
+}
+
+/// 对 [src] 图像应用 13x13 高斯模糊并返回新图像。
+img.Image gaussianBlur13Image(img.Image src) {
+  final srcBytes = src.getBytes();
+  final dstBytes = Uint8List(srcBytes.length);
+  _gaussianBlur13(
+    src: srcBytes,
+    dst: dstBytes,
+    width: src.width,
+    height: src.height,
+    channels: src.numChannels,
+  );
+  return img.Image.fromBytes(
+    width: src.width,
+    height: src.height,
+    bytes: dstBytes.buffer,
+    numChannels: src.numChannels,
+  );
+}
+
 // ===== 实际的上色实现 =====
 Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
   try {
@@ -145,23 +310,21 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       interpolation: img.Interpolation.linear,
     );
 
-    // 3. 构造 float32 输入张量 [1, 3, 256, 256]，值范围 0-255
+    // 3. 构造 float32 输入张量 [1, 3, 256, 256]，值范围 0-255，使用灰度亮度。
+    //
+    // 官方实现：
+    //   image = cv2.cvtColor(image, COLOR_BGR2GRAY)
+    //   image = cv2.cvtColor(image, COLOR_GRAY2RGB)
+    // 即三通道均为灰度亮度，不进行 /255 归一化。
     final input = Float32List(1 * 3 * 256 * 256);
     int offset = 0;
-
     for (int c = 0; c < 3; c++) {
       for (int y = 0; y < 256; y++) {
         for (int x = 0; x < 256; x++) {
           final pixel = resized.getPixel(x, y);
-          double value;
-          if (c == 0) {
-            value = pixel.r.toDouble();
-          } else if (c == 1) {
-            value = pixel.g.toDouble();
-          } else {
-            value = pixel.b.toDouble();
-          }
-          input[offset++] = value;
+          // OpenCV BGR2GRAY 的等效亮度系数（在 RGB 空间）
+          final luminance = 0.114 * pixel.r + 0.587 * pixel.g + 0.299 * pixel.b;
+          input[offset++] = luminance;
         }
       }
     }
@@ -195,7 +358,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         final outputs = session.run(runOptions, inputs);
         return _buildColorizedPng(
           outputs,
-          resized,
+          decoded,
           originalWidth,
           originalHeight,
           params.intensity,
@@ -212,7 +375,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         final outputs = session.run(runOptions, inputs);
         return _buildColorizedPng(
           outputs,
-          resized,
+          decoded,
           originalWidth,
           originalHeight,
           params.intensity,
@@ -230,7 +393,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
 /// 根据模型输出构建上色后的 PNG 字节
 Uint8List? _buildColorizedPng(
   dynamic outputs,
-  img.Image resized,
+  img.Image original,
   int originalWidth,
   int originalHeight,
   double intensity,
@@ -247,14 +410,18 @@ Uint8List? _buildColorizedPng(
     return null;
   }
 
-  // 6. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像
+  // 5. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像。
+  //
+  // 官方实现把模型输出当作 BGR，再做 COLOR_BGR2RGB。
+  // 因此在 Dart 端直接把通道 0 当 B、通道 2 当 R 写入 RGB 图像。
+  // 同时按官方做法 clip 到 [0, 255] 并转为 uint8。
   final modelRgb = img.Image(width: 256, height: 256);
   for (int y = 0; y < 256; y++) {
     for (int x = 0; x < 256; x++) {
       final idx = y * 256 + x;
-      final rIdx = 0 * 256 * 256 + idx;
+      final bIdx = 0 * 256 * 256 + idx;
       final gIdx = 1 * 256 * 256 + idx;
-      final bIdx = 2 * 256 * 256 + idx;
+      final rIdx = 2 * 256 * 256 + idx;
 
       double r, g, b;
       if (rIdx < outputFloats.length &&
@@ -264,11 +431,11 @@ Uint8List? _buildColorizedPng(
         g = outputFloats[gIdx].clamp(0.0, 255.0);
         b = outputFloats[bIdx].clamp(0.0, 255.0);
       } else {
-        // 备用：NHWC 格式 [1, 256, 256, 3]
+        // 备用：NHWC 格式 [1, 256, 256, 3]，同样按 BGR 解释
         final flatIdx = idx * 3;
-        r = outputFloats[flatIdx].clamp(0.0, 255.0);
+        b = outputFloats[flatIdx].clamp(0.0, 255.0);
         g = outputFloats[flatIdx + 1].clamp(0.0, 255.0);
-        b = outputFloats[flatIdx + 2].clamp(0.0, 255.0);
+        r = outputFloats[flatIdx + 2].clamp(0.0, 255.0);
       }
 
       modelRgb.setPixelRgb(
@@ -281,90 +448,61 @@ Uint8List? _buildColorizedPng(
     }
   }
 
-  // ============== 以下为修正后的后处理（与 colorize.py 一致） ==============
-
-  // 7. Sobel 边缘检测：识别漫画中的黑色线条区域
-  final edgeMask = _sobelEdgeMask(resized);
-
-  // 8. 亮度检测 + 边缘抑制：
-  //    - 边缘区域（黑色线条）：抑制颜色，保留原图灰度
-  //    - 非常亮的区域（白纸）：抑制颜色
-  //    - 非常暗的区域（纯黑线条）：抑制颜色
-  //    - 其他区域：保留模型输出的颜色
-  final mixedRgb = img.Image(width: 256, height: 256);
-
-  for (int y = 0; y < 256; y++) {
-    for (int x = 0; x < 256; x++) {
-      final origPixel = resized.getPixel(x, y);
-      final origR = origPixel.r.toDouble();
-      final origG = origPixel.g.toDouble();
-      final origB = origPixel.b.toDouble();
-
-      final origLuminance = (origR + origG * 2 + origB) / 4;
-
-      final coloredPixel = modelRgb.getPixel(x, y);
-      final coloredR = coloredPixel.r.toDouble();
-      final coloredG = coloredPixel.g.toDouble();
-      final coloredB = coloredPixel.b.toDouble();
-
-      final edgeStrength = edgeMask[y * 256 + x];
-
-      // 抑制权重 (0 = 完全保留颜色, 1 = 完全变回原图)
-      double suppress = 0.0;
-
-      // 8a. 边缘区域（漫画黑色线条）
-      if (edgeStrength > 0.15) {
-        suppress = math.min(1.0, edgeStrength * 2.5);
-      }
-
-      // 8b. 非常亮的区域（白纸背景）
-      if (origLuminance > 235) {
-        final brightFactor = ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
-        suppress = math.max(suppress, brightFactor);
-      }
-
-      // 8c. 非常暗的区域（纯黑线条）
-      if (origLuminance < 25) {
-        final darkFactor = ((25 - origLuminance) / 25.0).clamp(0.0, 1.0);
-        suppress = math.max(suppress, darkFactor);
-      }
-
-      // 混合：抑制区域回退到原图灰度
-      final gray = origLuminance;
-      double finalR = coloredR + (gray - coloredR) * suppress;
-      double finalG = coloredG + (gray - coloredG) * suppress;
-      double finalB = coloredB + (gray - coloredB) * suppress;
-
-      // 8d. intensity 调整：控制整体上色强度
-      if (intensity != 1.0) {
-        finalR = gray + (finalR - gray) * intensity;
-        finalG = gray + (finalG - gray) * intensity;
-        finalB = gray + (finalB - gray) * intensity;
-      }
-
-      mixedRgb.setPixelRgb(
-        x,
-        y,
-        finalR.round().clamp(0, 255),
-        finalG.round().clamp(0, 255),
-        finalB.round().clamp(0, 255),
-      );
-    }
-  }
-
-  // 9. 高斯模糊（半径 1）：柔化色彩边界，减少模型的高频噪点
-  final blurred = img.gaussianBlur(mixedRgb, radius: 1);
-
-  // 10. 缩放到原图尺寸
-  final finalImage = img.copyResize(
-    blurred,
+  // 6. 缩放到原图尺寸（官方先 resize 再 blur）
+  final scaled = img.copyResize(
+    modelRgb,
     width: originalWidth,
     height: originalHeight,
     interpolation: img.Interpolation.linear,
   );
 
-  // 11. 编码 PNG
-  final pngBytes = img.encodePng(finalImage);
+  // 7. 高斯模糊 (13, 13)，平滑模型输出的色块。
+  //
+  // 官方实现：
+  //   colorized = cv2.GaussianBlur(colorized, (13, 13), 0)
+  final blurred = gaussianBlur13Image(scaled);
+
+  // 8. LAB 合并：原始图像的 L + 模糊后模型输出的 A/B。
+  //
+  // 官方实现：
+  //   targetL = cv2.cvtColor(image, COLOR_BGR2LAB)[:, :, 0]
+  //   colorizedLAB = cv2.cvtColor(colorized, COLOR_BGR2LAB)
+  //   colorized = cv2.merge((targetL, colorizedLAB[:, :, 1:]))
+  //   colorized = cv2.cvtColor(colorized, COLOR_LAB2BGR)
+  final result = img.Image(width: originalWidth, height: originalHeight);
+  for (int y = 0; y < originalHeight; y++) {
+    for (int x = 0; x < originalWidth; x++) {
+      final origPixel = original.getPixel(x, y);
+      final (origL, _, _) = rgbToLab(
+        origPixel.r.toDouble(),
+        origPixel.g.toDouble(),
+        origPixel.b.toDouble(),
+      );
+
+      final blurredPixel = blurred.getPixel(x, y);
+      final (_, modelA, modelB) = rgbToLab(
+        blurredPixel.r.toDouble(),
+        blurredPixel.g.toDouble(),
+        blurredPixel.b.toDouble(),
+      );
+
+      // intensity：在 AB 通道上围绕中性灰 128 做缩放，保留 L 不变
+      final adjustedA = 128.0 + (modelA - 128.0) * intensity;
+      final adjustedB = 128.0 + (modelB - 128.0) * intensity;
+
+      final (r, g, b) = labToRgb(origL, adjustedA, adjustedB);
+      result.setPixelRgb(
+        x,
+        y,
+        r.round().clamp(0, 255),
+        g.round().clamp(0, 255),
+        b.round().clamp(0, 255),
+      );
+    }
+  }
+
+  // 9. 编码 PNG
+  final pngBytes = img.encodePng(result);
   return Uint8List.fromList(pngBytes);
 }
 
