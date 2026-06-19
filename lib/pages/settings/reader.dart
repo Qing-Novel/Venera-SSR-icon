@@ -157,6 +157,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
         ).toSliver(),
         _SwitchSetting(
           title: "Enable Anime4K".tl,
+          titleStyle: TextStyle(color: context.colorScheme.primary),
           settingKey: "enableAnime4K",
           onChanged: () {
             ComicImage.clear();
@@ -166,11 +167,47 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
         ).toSliver(),
         _SwitchSetting(
-          title: "Enable Image Colorization".tl,
+          title: "Enable Colorization(AI上色)".tl,
+          titleStyle: TextStyle(
+            color: context.colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
           settingKey: "enableColorization",
           onChanged: () {
             ComicImage.clear();
             widget.onChanged?.call("enableColorization");
+          },
+          beforeChange: (newValue) async {
+            if (!newValue) return true;
+            final downloaded = await ColorizationModelManager.isModelDownloaded;
+            if (downloaded) return true;
+            if (!mounted) return false;
+            showDialog(
+              context: context,
+              builder: (dialogContext) {
+                return ContentDialog(
+                  title: "Model Not Downloaded".tl,
+                  content: Text(
+                    "The colorization model is not downloaded. Please download it in Colorization Settings to enable AI colorization."
+                        .tl,
+                  ).paddingHorizontal(16).fixWidth(double.infinity),
+                  actions: [
+                    Button.filled(
+                      onPressed: () {
+                        dialogContext.pop();
+                        context.to(() => const ColorizationSettings());
+                      },
+                      child: Text("Go to Settings".tl),
+                    ),
+                    Button.outlined(
+                      onPressed: dialogContext.pop,
+                      child: Text("Cancel".tl),
+                    ),
+                  ],
+                );
+              },
+            );
+            return false;
           },
           comicId: isEnabledSpecificSettings ? widget.comicId : null,
           comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
