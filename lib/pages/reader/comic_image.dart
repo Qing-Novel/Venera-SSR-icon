@@ -94,11 +94,26 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
 
   static final Map<int, Size> _cache = {};
 
-  static clear() => _cache.clear();
+  /// 追踪所有活跃的实例，用于在 clear() 时重置所有实例的处理状态
+  static final Set<_ComicImageState> _instances = {};
+
+  static void clear() {
+    _cache.clear();
+    // 重置所有活跃实例的处理状态，强制重新处理
+    for (final instance in _instances) {
+      if (instance.mounted) {
+        instance._upscaledBytes = null;
+        instance._isUpscaling = false;
+        instance._colorizedBytes = null;
+        instance._isColorizing = false;
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _instances.add(this);
     WidgetsBinding.instance.addObserver(this);
     _scrollAwareContext = DisposableBuildContext<State<ComicImage>>(this);
     widget.onInit?.call(this);
@@ -107,6 +122,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
   @override
   void dispose() {
     assert(_imageStream != null);
+    _instances.remove(this);
     WidgetsBinding.instance.removeObserver(this);
     _stopListeningToStream();
     _completerHandle?.dispose();
@@ -197,6 +213,9 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
 
     if (_upscaledBytes != null || _isUpscaling) return;
 
+    // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
+    if (widget.image is! ReaderImageProvider) return;
+
     _isUpscaling = true;
 
     try {
@@ -259,6 +278,9 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     }
 
     if (_colorizedBytes != null || _isColorizing) return;
+
+    // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
+    if (widget.image is! ReaderImageProvider) return;
 
     _isColorizing = true;
 
