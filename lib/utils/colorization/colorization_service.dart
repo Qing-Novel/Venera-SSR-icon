@@ -40,7 +40,7 @@ class ColorizationService {
   /// 任务队列
   final List<Function> _taskQueue = [];
 
-  /// 初始化缓存目录和模型文件
+  /// 初始化缓存目录，不自动下载模型
   Future<void> init() async {
     try {
       final dir = await getTemporaryDirectory();
@@ -49,14 +49,21 @@ class ColorizationService {
       if (!await cacheDirectory.exists()) {
         await cacheDirectory.create(recursive: true);
       }
-      // 提取模型文件（从 asset 复制到应用目录，方便 onnxruntime 加载）
+      // 检查模型是否已下载（不触发下载）
       _modelPath = await ColorizationModelManager.ensureModelAvailable();
     } catch (e) {
       Log.error('Colorization', 'Colorization init error: $e');
     }
   }
 
-  /// 模型是否可用（asset 中是否有包含模型）
+  /// 检查模型文件是否可用
+  Future<bool> checkModelAvailable() async {
+    if (_modelPath != null) return true;
+    _modelPath = await ColorizationModelManager.ensureModelAvailable();
+    return _modelPath != null;
+  }
+
+  /// 模型是否可用（已下载到本地）
   bool get isModelAvailable => _modelPath != null;
 
   /// 获取缓存文件路径

@@ -165,6 +165,22 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           comicId: isEnabledSpecificSettings ? widget.comicId : null,
           comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
         ).toSliver(),
+        _SwitchSetting(
+          title: "Enable Image Colorization".tl,
+          settingKey: "enableColorization",
+          onChanged: () {
+            ComicImage.clear();
+            widget.onChanged?.call("enableColorization");
+          },
+          comicId: isEnabledSpecificSettings ? widget.comicId : null,
+          comicSource: isEnabledSpecificSettings ? widget.comicSource : null,
+        ).toSliver(),
+        ListTile(
+          title: Text("Colorization Settings".tl),
+          subtitle: Text("Manage model and intensity".tl),
+          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          onTap: () => context.to(() => const ColorizationSettings()),
+        ).toSliver(),
         SelectSetting(
           title: "Reading mode".tl,
           settingKey: "readerMode",
