@@ -228,7 +228,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
 }
 
 /// 根据模型输出构建上色后的 PNG 字节
-Future<Uint8List?> _buildColorizedPng(
+Uint8List? _buildColorizedPng(
   dynamic outputs,
   img.Image resized,
   int originalWidth,
