@@ -89,13 +89,20 @@ const double _labYn = 1.0;
 const double _labZn = 1.088754;
 
 /// 8-bit sRGB -> 线性 RGB [0, 1] 查找表，避免每像素重复 math.pow。
-final Float64List _inverseGammaLut = Float64List.generate(256, (i) {
-  final c = i.toDouble();
-  if (c <= 0.04045 * 255.0) {
-    return c / (12.92 * 255.0);
+final Float64List _inverseGammaLut = _buildInverseGammaLut();
+
+Float64List _buildInverseGammaLut() {
+  final lut = Float64List(256);
+  for (int i = 0; i < 256; i++) {
+    final c = i.toDouble();
+    if (c <= 0.04045 * 255.0) {
+      lut[i] = c / (12.92 * 255.0);
+    } else {
+      lut[i] = math.pow((c / 255.0 + 0.055) / 1.055, 2.4).toDouble();
+    }
   }
-  return math.pow((c / 255.0 + 0.055) / 1.055, 2.4).toDouble();
-});
+  return lut;
+}
 
 /// 将线性 RGB [0, 1] 做 sRGB gamma 校正为 8-bit。
 double _srgbGamma(double c) {
