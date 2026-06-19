@@ -28,7 +28,10 @@ class ReaderImageProvider
   Future<Uint8List> load(chunkEvents, checkStop) async {
     Uint8List? imageBytes;
     if (imageKey.startsWith('file://')) {
-      var file = File(imageKey);
+      // Strip the "file://" prefix to get the actual file path.
+      // LocalManager stores local image keys as "file://<absolutePath>",
+      // so we must remove the scheme before constructing a [File].
+      var file = File(imageKey.substring(7));
       if (await file.exists()) {
         imageBytes = await file.readAsBytes();
       } else {

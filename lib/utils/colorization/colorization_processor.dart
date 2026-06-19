@@ -129,7 +129,10 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
   try {
     // 1. 解码输入图像
     final decoded = img.decodeImage(params.imageBytes);
-    if (decoded == null) return null;
+    if (decoded == null) {
+      debugPrint('Colorization: failed to decode image bytes');
+      return null;
+    }
 
     final originalWidth = decoded.width;
     final originalHeight = decoded.height;
@@ -166,6 +169,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
     // 4. ONNX 模型推理
     final modelFile = File(params.modelPath);
     if (!modelFile.existsSync()) {
+      debugPrint('Colorization: model file not found at ${params.modelPath}');
       return null;
     }
 
@@ -183,139 +187,185 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         [1, 3, 256, 256],
       );
 
-      final outputs = session.run(runOptions, {'input': inputTensor});
-
-      if (outputs.isEmpty) return null;
-
-      // 5. 从输出张量提取 Float32List
-      final outputFloats = _extractFloat32List(outputs.first);
-      if (outputFloats == null) return null;
-
-      // 6. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像
-      final modelRgb = img.Image(width: 256, height: 256);
-      for (int y = 0; y < 256; y++) {
-        for (int x = 0; x < 256; x++) {
-          final idx = y * 256 + x;
-          final rIdx = 0 * 256 * 256 + idx;
-          final gIdx = 1 * 256 * 256 + idx;
-          final bIdx = 2 * 256 * 256 + idx;
-
-          double r, g, b;
-          if (rIdx < outputFloats.length &&
-              gIdx < outputFloats.length &&
-              bIdx < outputFloats.length) {
-            r = outputFloats[rIdx].clamp(0.0, 255.0);
-            g = outputFloats[gIdx].clamp(0.0, 255.0);
-            b = outputFloats[bIdx].clamp(0.0, 255.0);
-          } else {
-            // 备用：NHWC 格式 [1, 256, 256, 3]
-            final flatIdx = idx * 3;
-            r = outputFloats[flatIdx].clamp(0.0, 255.0);
-            g = outputFloats[flatIdx + 1].clamp(0.0, 255.0);
-            b = outputFloats[flatIdx + 2].clamp(0.0, 255.0);
-          }
-
-          modelRgb.setPixelRgb(
-            x,
-            y,
-            r.round().clamp(0, 255),
-            g.round().clamp(0, 255),
-            b.round().clamp(0, 255),
-          );
-        }
+      // 模型输入名称可能为 "input" 或其他名称，先尝试 "input"，
+      // 失败时使用 session.inputNames 的第一个。
+      Map<String, OrtValue> inputs;
+      try {
+        inputs = {'input': inputTensor};
+        final outputs = session.run(runOptions, inputs);
+        return _buildColorizedPng(
+          outputs,
+          resized,
+          originalWidth,
+          originalHeight,
+          params.intensity,
+        );
+      } catch (e) {
+        // 尝试使用模型实际的输入名称
+        final inputNames = session.inputNames;
+        if (inputNames.isEmpty) rethrow;
+        final actualInputName = inputNames.first;
+        debugPrint(
+          'Colorization: input name "input" failed, retrying with "$actualInputName": $e',
+        );
+        inputs = {actualInputName: inputTensor};
+        final outputs = session.run(runOptions, inputs);
+        return _buildColorizedPng(
+          outputs,
+          resized,
+          originalWidth,
+          originalHeight,
+          params.intensity,
+        );
       }
-
-      // ============== 以下为修正后的后处理（与 colorize.py 一致） ==============
-
-      // 7. Sobel 边缘检测：识别漫画中的黑色线条区域
-      final edgeMask = _sobelEdgeMask(resized);
-
-      // 8. 亮度检测 + 边缘抑制：
-      //    - 边缘区域（黑色线条）：抑制颜色，保留原图灰度
-      //    - 非常亮的区域（白纸）：抑制颜色
-      //    - 非常暗的区域（纯黑线条）：抑制颜色
-      //    - 其他区域：保留模型输出的颜色
-      final mixedRgb = img.Image(width: 256, height: 256);
-
-      for (int y = 0; y < 256; y++) {
-        for (int x = 0; x < 256; x++) {
-          final origPixel = resized.getPixel(x, y);
-          final origR = origPixel.r.toDouble();
-          final origG = origPixel.g.toDouble();
-          final origB = origPixel.b.toDouble();
-
-          final origLuminance = (origR + origG * 2 + origB) / 4;
-
-          final coloredPixel = modelRgb.getPixel(x, y);
-          final coloredR = coloredPixel.r.toDouble();
-          final coloredG = coloredPixel.g.toDouble();
-          final coloredB = coloredPixel.b.toDouble();
-
-          final edgeStrength = edgeMask[y * 256 + x];
-
-          // 抑制权重 (0 = 完全保留颜色, 1 = 完全变回原图)
-          double suppress = 0.0;
-
-          // 8a. 边缘区域（漫画黑色线条）
-          if (edgeStrength > 0.15) {
-            suppress = math.min(1.0, edgeStrength * 2.5);
-          }
-
-          // 8b. 非常亮的区域（白纸背景）
-          if (origLuminance > 235) {
-            final brightFactor = ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
-            suppress = math.max(suppress, brightFactor);
-          }
-
-          // 8c. 非常暗的区域（纯黑线条）
-          if (origLuminance < 25) {
-            final darkFactor = ((25 - origLuminance) / 25.0).clamp(0.0, 1.0);
-            suppress = math.max(suppress, darkFactor);
-          }
-
-          // 混合：抑制区域回退到原图灰度
-          final gray = origLuminance;
-          double finalR = coloredR + (gray - coloredR) * suppress;
-          double finalG = coloredG + (gray - coloredG) * suppress;
-          double finalB = coloredB + (gray - coloredB) * suppress;
-
-          // 8d. intensity 调整：控制整体上色强度
-          if (params.intensity != 1.0) {
-            finalR = gray + (finalR - gray) * params.intensity;
-            finalG = gray + (finalG - gray) * params.intensity;
-            finalB = gray + (finalB - gray) * params.intensity;
-          }
-
-          mixedRgb.setPixelRgb(
-            x,
-            y,
-            finalR.round().clamp(0, 255),
-            finalG.round().clamp(0, 255),
-            finalB.round().clamp(0, 255),
-          );
-        }
-      }
-
-      // 9. 高斯模糊（半径 1）：柔化色彩边界，减少模型的高频噪点
-      final blurred = img.gaussianBlur(mixedRgb, radius: 1);
-
-      // 10. 缩放到原图尺寸
-      final finalImage = img.copyResize(
-        blurred,
-        width: originalWidth,
-        height: originalHeight,
-        interpolation: img.Interpolation.linear,
-      );
-
-      // 11. 编码 PNG
-      final pngBytes = img.encodePng(finalImage);
-      return Uint8List.fromList(pngBytes);
     } finally {
       session.release();
     }
-  } catch (e) {
+  } catch (e, s) {
+    debugPrint('Colorization error: $e\n$s');
     return null;
   }
+}
+
+/// 根据模型输出构建上色后的 PNG 字节
+Future<Uint8List?> _buildColorizedPng(
+  dynamic outputs,
+  img.Image resized,
+  int originalWidth,
+  int originalHeight,
+  double intensity,
+) {
+  if (outputs is! Map<String, OrtValue> || outputs.isEmpty) {
+    debugPrint('Colorization: empty model outputs');
+    return null;
+  }
+
+  final outputValue = outputs.values.first;
+  final outputFloats = _extractFloat32List(outputValue);
+  if (outputFloats == null) {
+    debugPrint('Colorization: failed to extract Float32List from output');
+    return null;
+  }
+
+  // 6. 将模型输出 [1, 3, 256, 256] 解析为 RGB 图像
+  final modelRgb = img.Image(width: 256, height: 256);
+  for (int y = 0; y < 256; y++) {
+    for (int x = 0; x < 256; x++) {
+      final idx = y * 256 + x;
+      final rIdx = 0 * 256 * 256 + idx;
+      final gIdx = 1 * 256 * 256 + idx;
+      final bIdx = 2 * 256 * 256 + idx;
+
+      double r, g, b;
+      if (rIdx < outputFloats.length &&
+          gIdx < outputFloats.length &&
+          bIdx < outputFloats.length) {
+        r = outputFloats[rIdx].clamp(0.0, 255.0);
+        g = outputFloats[gIdx].clamp(0.0, 255.0);
+        b = outputFloats[bIdx].clamp(0.0, 255.0);
+      } else {
+        // 备用：NHWC 格式 [1, 256, 256, 3]
+        final flatIdx = idx * 3;
+        r = outputFloats[flatIdx].clamp(0.0, 255.0);
+        g = outputFloats[flatIdx + 1].clamp(0.0, 255.0);
+        b = outputFloats[flatIdx + 2].clamp(0.0, 255.0);
+      }
+
+      modelRgb.setPixelRgb(
+        x,
+        y,
+        r.round().clamp(0, 255),
+        g.round().clamp(0, 255),
+        b.round().clamp(0, 255),
+      );
+    }
+  }
+
+  // ============== 以下为修正后的后处理（与 colorize.py 一致） ==============
+
+  // 7. Sobel 边缘检测：识别漫画中的黑色线条区域
+  final edgeMask = _sobelEdgeMask(resized);
+
+  // 8. 亮度检测 + 边缘抑制：
+  //    - 边缘区域（黑色线条）：抑制颜色，保留原图灰度
+  //    - 非常亮的区域（白纸）：抑制颜色
+  //    - 非常暗的区域（纯黑线条）：抑制颜色
+  //    - 其他区域：保留模型输出的颜色
+  final mixedRgb = img.Image(width: 256, height: 256);
+
+  for (int y = 0; y < 256; y++) {
+    for (int x = 0; x < 256; x++) {
+      final origPixel = resized.getPixel(x, y);
+      final origR = origPixel.r.toDouble();
+      final origG = origPixel.g.toDouble();
+      final origB = origPixel.b.toDouble();
+
+      final origLuminance = (origR + origG * 2 + origB) / 4;
+
+      final coloredPixel = modelRgb.getPixel(x, y);
+      final coloredR = coloredPixel.r.toDouble();
+      final coloredG = coloredPixel.g.toDouble();
+      final coloredB = coloredPixel.b.toDouble();
+
+      final edgeStrength = edgeMask[y * 256 + x];
+
+      // 抑制权重 (0 = 完全保留颜色, 1 = 完全变回原图)
+      double suppress = 0.0;
+
+      // 8a. 边缘区域（漫画黑色线条）
+      if (edgeStrength > 0.15) {
+        suppress = math.min(1.0, edgeStrength * 2.5);
+      }
+
+      // 8b. 非常亮的区域（白纸背景）
+      if (origLuminance > 235) {
+        final brightFactor = ((origLuminance - 235) / 20.0).clamp(0.0, 1.0);
+        suppress = math.max(suppress, brightFactor);
+      }
+
+      // 8c. 非常暗的区域（纯黑线条）
+      if (origLuminance < 25) {
+        final darkFactor = ((25 - origLuminance) / 25.0).clamp(0.0, 1.0);
+        suppress = math.max(suppress, darkFactor);
+      }
+
+      // 混合：抑制区域回退到原图灰度
+      final gray = origLuminance;
+      double finalR = coloredR + (gray - coloredR) * suppress;
+      double finalG = coloredG + (gray - coloredG) * suppress;
+      double finalB = coloredB + (gray - coloredB) * suppress;
+
+      // 8d. intensity 调整：控制整体上色强度
+      if (intensity != 1.0) {
+        finalR = gray + (finalR - gray) * intensity;
+        finalG = gray + (finalG - gray) * intensity;
+        finalB = gray + (finalB - gray) * intensity;
+      }
+
+      mixedRgb.setPixelRgb(
+        x,
+        y,
+        finalR.round().clamp(0, 255),
+        finalG.round().clamp(0, 255),
+        finalB.round().clamp(0, 255),
+      );
+    }
+  }
+
+  // 9. 高斯模糊（半径 1）：柔化色彩边界，减少模型的高频噪点
+  final blurred = img.gaussianBlur(mixedRgb, radius: 1);
+
+  // 10. 缩放到原图尺寸
+  final finalImage = img.copyResize(
+    blurred,
+    width: originalWidth,
+    height: originalHeight,
+    interpolation: img.Interpolation.linear,
+  );
+
+  // 11. 编码 PNG
+  final pngBytes = img.encodePng(finalImage);
+  return Uint8List.fromList(pngBytes);
 }
 
 /// 模型管理器：负责从网络下载模型到应用目录

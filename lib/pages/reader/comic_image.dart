@@ -152,6 +152,13 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
   void didUpdateWidget(ComicImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.image != oldWidget.image) {
+      // 当图像更换时，必须重置已处理的字节数据和处理状态，
+      // 否则 _upscaledBytes/_colorizedBytes 仍指向旧图的结果，
+      // 触发方法会因 "!= null" 提前返回，导致新图永远不会被处理。
+      _upscaledBytes = null;
+      _colorizedBytes = null;
+      _isUpscaling = false;
+      _isColorizing = false;
       _resolveImage();
       _triggerImageUpscale();
       _triggerImageColorization();
@@ -188,8 +195,6 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
 
   /// 触发图像超分处理
   Future<void> _triggerImageUpscale() async {
-    if (Platform.isWindows) return;
-
     final provider = _getReaderImageProvider();
 
     // 检查是否启用了 Anime4K
@@ -229,6 +234,20 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       );
       unawaited(chunkController.close());
 
+      if (imageBytes.isEmpty) {
+        Log.warning('ComicImage', 'Anime4K: empty image bytes for ${provider.key}');
+        _isUpscaling = false;
+        return;
+      }
+
+      // 加载过程中 widget 可能已被销毁
+      if (!mounted) {
+        _isUpscaling = false;
+        return;
+      }
+
+      Log.info('ComicImage', 'Anime4K: start processing ${provider.key}');
+
       final result = await Anime4KService.instance.processImage(
         imageBytes: imageBytes,
         cacheKey: provider.key,
@@ -237,16 +256,23 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         pushGradStrength: (appdata.settings.getReaderSetting(provider.cid, provider.sourceKey ?? "", 'anime4KPushGradStrength') as num?)?.toDouble() ?? 1.0,
       );
 
-      if (result != null && mounted) {
+      if (!mounted) {
+        _isUpscaling = false;
+        return;
+      }
+
+      if (result != null) {
+        Log.info('ComicImage', 'Anime4K: done ${provider.key}');
         setState(() {
           _upscaledBytes = result;
           _isUpscaling = false;
         });
       } else {
+        Log.warning('ComicImage', 'Anime4K: null result for ${provider.key}');
         _isUpscaling = false;
       }
-    } catch (e) {
-      Log.error('ComicImage', 'Anime4K processing error: $e');
+    } catch (e, s) {
+      Log.error('ComicImage', 'Anime4K processing error: $e', s);
       _isUpscaling = false;
     }
   }
@@ -282,6 +308,11 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
     if (provider == null) return;
 
+    // 模型未就绪时静默跳过（避免卡住 _isColorizing）
+    if (!ColorizationService.instance.isModelAvailable) {
+      return;
+    }
+
     _isColorizing = true;
 
     try {
@@ -293,6 +324,20 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       );
       unawaited(chunkController.close());
 
+      if (imageBytes.isEmpty) {
+        Log.warning('ComicImage', 'Colorization: empty image bytes for ${provider.key}');
+        _isColorizing = false;
+        return;
+      }
+
+      // 加载过程中 widget 可能已被销毁
+      if (!mounted) {
+        _isColorizing = false;
+        return;
+      }
+
+      Log.info('ComicImage', 'Colorization: start processing ${provider.key}');
+
       final result = await ColorizationService.instance.processImage(
         imageBytes: imageBytes,
         cacheKey: provider.key,
@@ -303,16 +348,23 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
             ) as num?)?.toDouble() ?? 1.0,
       );
 
-      if (result != null && mounted) {
+      if (!mounted) {
+        _isColorizing = false;
+        return;
+      }
+
+      if (result != null) {
+        Log.info('ComicImage', 'Colorization: done ${provider.key}');
         setState(() {
           _colorizedBytes = result;
           _isColorizing = false;
         });
       } else {
+        Log.warning('ComicImage', 'Colorization: null result for ${provider.key}');
         _isColorizing = false;
       }
-    } catch (e) {
-      Log.error('ComicImage', 'Colorization processing error: $e');
+    } catch (e, s) {
+      Log.error('ComicImage', 'Colorization processing error: $e', s);
       _isColorizing = false;
     }
   }
