@@ -99,13 +99,17 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
 
   static void clear() {
     _cache.clear();
-    // 重置所有活跃实例的处理状态，强制重新处理
+    // 重置所有活跃实例的处理状态，并重新触发处理。
+    // 否则 didUpdateWidget 会因 widget.image 未变而不再触发，
+    // 导致开关切换后已显示的图片不重新处理（超分/上色不生效）。
     for (final instance in _instances) {
       if (instance.mounted) {
         instance._upscaledBytes = null;
         instance._isUpscaling = false;
         instance._colorizedBytes = null;
         instance._isColorizing = false;
+        instance._triggerImageUpscale();
+        instance._triggerImageColorization();
       }
     }
   }
@@ -308,9 +312,12 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
     if (provider == null) return;
 
-    // 模型未就绪时静默跳过（避免卡住 _isColorizing）
+    // 模型未就绪时重新检测一次（用户可能刚下载模型但服务尚未刷新），
+    // 仍不可用则静默跳过（避免卡住 _isColorizing）
     if (!ColorizationService.instance.isModelAvailable) {
-      return;
+      if (!await ColorizationService.instance.checkModelAvailable()) {
+        return;
+      }
     }
 
     _isColorizing = true;

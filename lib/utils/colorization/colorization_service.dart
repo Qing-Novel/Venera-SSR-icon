@@ -57,8 +57,14 @@ class ColorizationService {
   }
 
   /// 检查模型文件是否可用
+  ///
+  /// 会校验缓存的路径对应的文件是否仍然存在（模型可能已被删除），
+  /// 不存在则重置并重新检测，确保删除模型后状态正确。
   Future<bool> checkModelAvailable() async {
-    if (_modelPath != null) return true;
+    if (_modelPath != null) {
+      if (await File(_modelPath!).exists()) return true;
+      _modelPath = null; // 文件已被删除，重置
+    }
     _modelPath = await ColorizationModelManager.ensureModelAvailable();
     return _modelPath != null;
   }
@@ -111,11 +117,14 @@ class ColorizationService {
     required String cacheKey,
     double intensity = 1.0,
   }) async {
-    // 模型文件还没准备好
-    final modelPath = _modelPath;
+    // 模型文件还没准备好：兜底重新检测（init 时模型可能尚未下载）
+    var modelPath = _modelPath;
     if (modelPath == null) {
-      Log.warning('Colorization', 'Model not available, skipping colorization for $cacheKey');
-      return null;
+      if (!await checkModelAvailable()) {
+        Log.warning('Colorization', 'Model not available, skipping colorization for $cacheKey');
+        return null;
+      }
+      modelPath = _modelPath!;
     }
 
     // 生成唯一缓存键（包含参数信息）

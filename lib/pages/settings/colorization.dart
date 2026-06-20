@@ -66,6 +66,8 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
       }
     } finally {
       _isDownloading = false;
+      // 主动刷新服务的模型路径缓存，使后续上色处理无需重启即可生效
+      await ColorizationService.instance.checkModelAvailable();
       await _refreshModelStatus();
       if (mounted) {
         setState(() {
@@ -82,6 +84,8 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   Future<void> _deleteModel() async {
     await ColorizationModelManager.clearModel();
     await ColorizationService.instance.clearCache();
+    // 让服务感知模型已删除（重置 _modelPath，校验文件不存在）
+    await ColorizationService.instance.checkModelAvailable();
     await _refreshModelStatus();
     if (mounted) {
       context.showMessage(message: "Model deleted".tl);
