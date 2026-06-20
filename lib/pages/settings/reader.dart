@@ -160,6 +160,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           titleStyle: TextStyle(color: context.colorScheme.primary),
           settingKey: "enableAnime4K",
           onChanged: () {
+            PaintingBinding.instance.imageCache.clear();
             ComicImage.clear();
             widget.onChanged?.call("enableAnime4K");
           },
@@ -174,6 +175,7 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           ),
           settingKey: "enableColorization",
           onChanged: () {
+            PaintingBinding.instance.imageCache.clear();
             ComicImage.clear();
             widget.onChanged?.call("enableColorization");
           },

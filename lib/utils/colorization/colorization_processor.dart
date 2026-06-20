@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
+import 'package:venera/foundation/log.dart';
 
 /// 图像上色参数
 class ColorizationParams {
@@ -302,7 +303,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
     // 1. 解码输入图像
     final decoded = img.decodeImage(params.imageBytes);
     if (decoded == null) {
-      debugPrint('Colorization: failed to decode image bytes');
+      Log.error('Colorization', 'failed to decode image bytes');
       return null;
     }
 
@@ -339,7 +340,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
     // 4. ONNX 模型推理
     final modelFile = File(params.modelPath);
     if (!modelFile.existsSync()) {
-      debugPrint('Colorization: model file not found at ${params.modelPath}');
+      Log.error('Colorization', 'model file not found at ${params.modelPath}');
       return null;
     }
 
@@ -375,9 +376,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
         final inputNames = session.inputNames;
         if (inputNames.isEmpty) rethrow;
         final actualInputName = inputNames.first;
-        debugPrint(
-          'Colorization: input name "input" failed, retrying with "$actualInputName": $e',
-        );
+        Log.error('Colorization', 'input name "input" failed, retrying with "$actualInputName": $e');
         inputs = {actualInputName: inputTensor};
         final outputs = session.run(runOptions, inputs);
         return _buildColorizedPng(
@@ -392,7 +391,7 @@ Future<Uint8List?> _colorizeImpl(_IsolateParams params) async {
       session.release();
     }
   } catch (e, s) {
-    debugPrint('Colorization error: $e\n$s');
+    Log.error('Colorization', 'Colorization error: $e\n$s');
     return null;
   }
 }
@@ -406,14 +405,14 @@ Uint8List? _buildColorizedPng(
   double intensity,
 ) {
   if (outputs is! Map<String, OrtValue> || outputs.isEmpty) {
-    debugPrint('Colorization: empty model outputs');
+    Log.error('Colorization', 'empty model outputs');
     return null;
   }
 
   final outputValue = outputs.values.first;
   final outputFloats = _extractFloat32List(outputValue);
   if (outputFloats == null) {
-    debugPrint('Colorization: failed to extract Float32List from output');
+    Log.error('Colorization', 'failed to extract Float32List from output');
     return null;
   }
 
