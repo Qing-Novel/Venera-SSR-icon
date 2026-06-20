@@ -5,9 +5,12 @@ import 'package:flutter_qjs/flutter_qjs.dart';
 import 'package:venera/foundation/js_engine.dart';
 import 'package:venera/network/images.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/foundation/log.dart';
 import 'base_image_provider.dart';
 import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
+import 'package:venera/utils/anime4k/anime4k_service.dart';
+import 'package:venera/utils/colorization/colorization_service.dart';
 
 class ReaderImageProvider
     extends BaseImageProvider<image_provider.ReaderImageProvider> {
@@ -113,6 +116,65 @@ class ReaderImageProvider
         }
       }
     }
+    // ===== Anime4K 超分处理 =====
+    // 在 ImageProvider.load 阶段处理图片字节，与自定义图片处理相同位置，
+    // 确保无论阅读器用什么 widget 渲染都会生效。
+    final enableAnime4K = appdata.settings.getReaderSetting(
+          cid, sourceKey ?? "", 'enableAnime4K') ==
+        true;
+    if (enableAnime4K) {
+      try {
+        final result = await Anime4KService.instance.processImage(
+          imageBytes: imageBytes,
+          cacheKey: key,
+          scaleFactor: (appdata.settings.getReaderSetting(
+                    cid, sourceKey ?? "", 'anime4KScaleFactor') as num?)
+                ?.toDouble() ??
+              2.0,
+          pushStrength: (appdata.settings.getReaderSetting(
+                    cid, sourceKey ?? "", 'anime4KPushStrength') as num?)
+                ?.toDouble() ??
+              0.31,
+          pushGradStrength: (appdata.settings.getReaderSetting(
+                    cid, sourceKey ?? "", 'anime4KPushGradStrength') as num?)
+                ?.toDouble() ??
+              1.0,
+        );
+        if (result != null) {
+          imageBytes = result;
+        }
+      } catch (e, s) {
+        Log.error('ReaderImage', 'Anime4K processing error: $e', s);
+      }
+    }
+
+    // ===== AI 上色处理 =====
+    final enableColorization = appdata.settings.getReaderSetting(
+          cid, sourceKey ?? "", 'enableColorization') ==
+        true;
+    if (enableColorization) {
+      try {
+        if (!ColorizationService.instance.isModelAvailable) {
+          await ColorizationService.instance.checkModelAvailable();
+        }
+        if (ColorizationService.instance.isModelAvailable) {
+          final result = await ColorizationService.instance.processImage(
+            imageBytes: imageBytes,
+            cacheKey: key,
+            intensity: (appdata.settings.getReaderSetting(
+                      cid, sourceKey ?? "", 'colorizationIntensity') as num?)
+                  ?.toDouble() ??
+                1.0,
+          );
+          if (result != null) {
+            imageBytes = result;
+          }
+        }
+      } catch (e, s) {
+        Log.error('ReaderImage', 'Colorization processing error: $e', s);
+      }
+    }
+
     return imageBytes!;
   }
 
@@ -125,5 +187,5 @@ class ReaderImageProvider
   String get key => "$imageKey@$sourceKey@$cid@$eid";
 
   @override
-  bool get enableResize => true;
+  bool get enableResize => false;
 }
