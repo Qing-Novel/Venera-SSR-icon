@@ -57,10 +57,12 @@ class ReaderImageProvider
     if (imageBytes == null) {
       throw "Error: Empty response body.";
     }
+    // 自此 imageBytes 非 null，用 final 捕获以便下方闭包/赋值使用
+    var bytes = imageBytes;
     if (appdata.settings['enableCustomImageProcessing']) {
       var script = appdata.settings['customImageProcessing'].toString();
       if (!script.contains('function processImage')) {
-        return imageBytes;
+        return bytes;
       }
       var func = JsEngine().runCode('''
         (() => {
@@ -70,18 +72,18 @@ class ReaderImageProvider
       ''');
       if (func is JSInvokable) {
         var autoFreeFunc = JSAutoFreeFunction(func);
-        var result = autoFreeFunc([imageBytes, cid, eid, page, sourceKey]);
+        var result = autoFreeFunc([bytes, cid, eid, page, sourceKey]);
         if (result is Uint8List) {
-          imageBytes = result;
+          bytes = result;
         } else if (result is Future) {
           var futureResult = await result;
           if (futureResult is Uint8List) {
-            imageBytes = futureResult;
+            bytes = futureResult;
           }
         } else if (result is Map) {
           var image = result['image'];
           if (image is Uint8List) {
-            imageBytes = image;
+            bytes = image;
           } else if (image is Future) {
             JSAutoFreeFunction? onCancel;
             if (result['onCancel'] is JSInvokable) {
@@ -90,7 +92,7 @@ class ReaderImageProvider
             if (onCancel == null) {
               var futureImage = await image;
               if (futureImage is Uint8List) {
-                imageBytes = futureImage;
+                bytes = futureImage;
               }
             } else {
               dynamic futureImage;
@@ -109,7 +111,7 @@ class ReaderImageProvider
                 await Future.delayed(Duration(milliseconds: 50));
               }
               if (futureImage is Uint8List) {
-                imageBytes = futureImage;
+                bytes = futureImage;
               }
             }
           }
@@ -125,7 +127,7 @@ class ReaderImageProvider
     if (enableAnime4K) {
       try {
         final result = await Anime4KService.instance.processImage(
-          imageBytes: imageBytes,
+          imageBytes: bytes,
           cacheKey: key,
           scaleFactor: (appdata.settings.getReaderSetting(
                     cid, sourceKey ?? "", 'anime4KScaleFactor') as num?)
@@ -141,7 +143,7 @@ class ReaderImageProvider
               1.0,
         );
         if (result != null) {
-          imageBytes = result;
+          bytes = result;
         }
       } catch (e, s) {
         Log.error('ReaderImage', 'Anime4K processing error: $e', s);
@@ -159,7 +161,7 @@ class ReaderImageProvider
         }
         if (ColorizationService.instance.isModelAvailable) {
           final result = await ColorizationService.instance.processImage(
-            imageBytes: imageBytes,
+            imageBytes: bytes,
             cacheKey: key,
             intensity: (appdata.settings.getReaderSetting(
                       cid, sourceKey ?? "", 'colorizationIntensity') as num?)
@@ -167,7 +169,7 @@ class ReaderImageProvider
                 1.0,
           );
           if (result != null) {
-            imageBytes = result;
+            bytes = result;
           }
         }
       } catch (e, s) {
@@ -175,7 +177,7 @@ class ReaderImageProvider
       }
     }
 
-    return imageBytes!;
+    return bytes;
   }
 
   @override
