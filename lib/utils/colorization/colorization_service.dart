@@ -118,13 +118,17 @@ class ColorizationService {
     double intensity = 1.0,
   }) async {
     // 模型文件还没准备好：兜底重新检测（init 时模型可能尚未下载）
-    var modelPath = _modelPath;
-    if (modelPath == null) {
+    if (_modelPath == null) {
       if (!await checkModelAvailable()) {
         Log.warning('Colorization', 'Model not available, skipping colorization for $cacheKey');
         return null;
       }
-      modelPath = _modelPath!;
+    }
+    // 用 final 捕获，确保在下方 _enqueueTask 闭包内能被提升为非空
+    final modelPath = _modelPath;
+    if (modelPath == null) {
+      // 双保险：checkModelAvailable 返回 true 但 _modelPath 仍为 null（理论不应发生）
+      return null;
     }
 
     // 生成唯一缓存键（包含参数信息）
