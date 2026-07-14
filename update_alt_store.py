@@ -112,7 +112,7 @@ def update_json_file_release(json_file, latest_release):
     news_identifier = f"release-{full_version}"
     date_string = date_obj.strftime("%d/%m/%y")
     news_entry = {
-        "appID": "com.github.wgh136.venera",
+        "appID": "com.github.kiastr.venera-ssr",
         "caption": f"Update of Venera just got released!",
         "date": latest_release["published_at"],
         "identifier": news_identifier,
