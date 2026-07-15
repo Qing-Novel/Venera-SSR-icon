@@ -120,9 +120,9 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
         if (mounted) context.showMessage(message: "Please select a .onnx file".tl);
         return;
       }
-      // 读取字节并物化到应用私有目录（Android 上为 content URI，需落盘）
-      final bytes = await xFile.readAsBytes();
-      await ColorizationModelManager.importCustomModel(bytes);
+      // 流式拷贝到应用私有目录（Android 上为 content URI，需落盘），
+      // 避免把整个 ~243MB 模型一次性读入内存触发 OOM 崩溃
+      await ColorizationModelManager.importCustomModel(xFile.openRead());
       // 让服务立即感知新路径，无需重启
       await ColorizationService.instance.checkModelAvailable();
       await _refreshModelStatus();

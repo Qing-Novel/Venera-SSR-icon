@@ -64,6 +64,10 @@ class ColorizePlugin : MethodChannel.MethodCallHandler {
         executor.execute {
             try {
                 ensureOpenCv()
+                if (!openCvReady) {
+                    result.error("OPENCV_FAILED", "OpenCV native libs failed to load", null)
+                    return@execute
+                }
                 val inputBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                     ?: run {
                         result.error("DECODE_FAILED", "无法解码输入图片", null)
@@ -75,7 +79,8 @@ class ColorizePlugin : MethodChannel.MethodCallHandler {
                 inputBitmap.recycle()
                 outBitmap.recycle()
                 result.success(baos.toByteArray())
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                // 捕获 Throwable（含 Error/OOM），以 PlatformException 返回而非让进程崩溃
                 result.error("COLORIZE_FAILED", e.message ?: "unknown error", null)
             }
         }

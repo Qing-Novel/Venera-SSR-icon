@@ -94,17 +94,29 @@ class ColorizationModelManager {
     }
   }
 
-  /// 从用户选定的文件字节导入为自定义模型。
+  /// 从用户选定的模型文件流导入为自定义模型。
   ///
-  /// 物化到应用私有目录（真实文件路径），确保 Android 上的 content URI
-  /// 与原生 ONNX Runtime 都能正确读取。返回最终存储路径。
-  static Future<String> importCustomModel(Uint8List bytes) async {
-    if (bytes.length < 1024 * 1024) {
-      throw Exception('File too small, invalid model');
-    }
+  /// 采用流式拷贝（而非一次性 readAsBytes + writeAsBytes），避免把整个
+  /// ~243MB 模型一次性读入内存导致 OOM 崩溃（这是“选择外部模型后应用崩溃”的根因）。
+  /// 物化到应用私有目录（真实文件路径），确保 Android 原生 ONNX Runtime 能正确读取。
+  /// 返回最终存储路径。
+  static Future<String> importCustomModel(Stream<List<int>> bytes) async {
     final dir = await getApplicationSupportDirectory();
     final dest = path.join(dir.path, 'custom_colorization_model.onnx');
-    await File(dest).writeAsBytes(bytes, flush: true);
+    final sink = File(dest).openWrite();
+    try {
+      await bytes.pipe(sink);
+    } catch (e) {
+      await sink.close().catchError((_) {});
+      await File(dest).delete().catchError((_) {});
+      throw Exception('Failed to import model: $e');
+    }
+    await sink.close();
+    final size = await File(dest).length();
+    if (size < 1024 * 1024) {
+      await File(dest).delete().catchError((_) {});
+      throw Exception('File too small, invalid model');
+    }
     _customModelPath = dest;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_customModelPathKey, dest);
