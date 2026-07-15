@@ -1,7 +1,10 @@
 name: Publish APK to Release
 
 on:
-  workflow_dispatch:
+  # Triggered by pushing this file (PAT lacks `workflow` scope for dispatch)
+  push:
+    paths:
+      - '.github/workflows/publish_release.yml'
 
 permissions:
   contents: write
