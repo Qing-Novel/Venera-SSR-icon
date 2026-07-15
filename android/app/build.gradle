@@ -154,9 +154,4 @@ dependencies {
     // 图像上色原生核心：OpenCV（图像预处理/后处理）+ ONNX Runtime（模型推理）
     implementation 'org.opencv:opencv:4.11.0'
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.0'
-    // Flutter embedding 的 PlayStoreDeferredComponentManager / FlutterPlayStoreSplitApplication
-    // 引用了 com.google.android.play.core.*，R8 strict 模式需要该库在 classpath 上
-    // （项目未启用 deferred-components，Flutter Gradle 插件不会自动引入，故显式添加）。
-    // 1.10.3 是最后一个仍包含 splitinstall 包的 play-core 版本。
-    implementation 'com.google.android.play:play-core:1.10.3'
 }
