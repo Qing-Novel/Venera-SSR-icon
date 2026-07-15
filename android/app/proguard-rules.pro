@@ -17,7 +17,7 @@
 -dontwarn org.opencv.**
 
 # 上色插件与方法通道（防止 R8 误删未被直接引用的入口）
--keep class com.github.wgh136.venera.colorize.** { *; }
+-keep class com.github.kiastr.venera_ssr.colorize.** { *; }
 
 # ============================================================
 # Flutter embedding（PlayStoreDeferredComponentManager /

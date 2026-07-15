@@ -10,7 +10,7 @@ import 'package:venera/foundation/log.dart';
 /// 改为在设置页由用户手动触发下载，避免首次启动即下载大文件。
 ///
 /// 实际的推理已移至原生端（Kotlin + OpenCV + ONNX Runtime），
-/// 见 android/app/src/main/kotlin/com/github/wgh136/venera/colorize/，
+/// 见 android/app/src/main/kotlin/com/github/kiastr/venera_ssr/colorize/，
 /// 通过 MethodChannel 调用。本文件只负责模型的下载与本地路径解析。
 class ColorizationModelManager {
   static const modelFileName = 'deoldify_artistic.onnx';

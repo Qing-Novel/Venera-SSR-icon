@@ -1,4 +1,4 @@
-package com.github.wgh136.venera
+package com.github.kiastr.venera_ssr
 
 import android.Manifest
 import android.app.Activity
@@ -28,7 +28,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
-import com.github.wgh136.venera.colorize.ColorizePlugin
+import com.github.kiastr.venera_ssr.colorize.ColorizePlugin
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -192,7 +192,7 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             })
 
-        // 图像上色原生核心（MethodChannel: com.github.wgh136.venera/colorize）
+        // 图像上色原生核心（MethodChannel: com.github.kiastr.venera_ssr/colorize）
         ColorizePlugin.registerWith(flutterEngine.dartExecutor.binaryMessenger)
     }
 

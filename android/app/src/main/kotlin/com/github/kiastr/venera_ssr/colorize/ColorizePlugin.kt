@@ -1,4 +1,4 @@
-package com.github.wgh136.venera.colorize
+package com.github.kiastr.venera_ssr.colorize
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -19,7 +19,7 @@ import java.util.concurrent.Executors
 class ColorizePlugin : MethodChannel.MethodCallHandler {
 
     companion object {
-        const val CHANNEL = "com.github.wgh136.venera/colorize"
+        const val CHANNEL = "com.github.kiastr.venera_ssr/colorize"
 
         fun registerWith(messenger: BinaryMessenger) {
             val channel = MethodChannel(messenger, CHANNEL)

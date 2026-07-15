@@ -15,7 +15,7 @@ import 'colorization_processor.dart';
 /// 采用单例模式，通过 [ColorizationService.instance] 访问。
 ///
 /// 推理实现：原生（Kotlin + OpenCV + ONNX Runtime），通过 MethodChannel
-/// [com.github.wgh136.venera/colorize] 调用。相比原纯 Dart `onnxruntime`
+/// [com.github.kiastr.venera_ssr/colorize] 调用。相比原纯 Dart `onnxruntime`
 /// 实现，原生方案有会话缓存、正确的 OpenCV LAB 后处理（无 sRGB gamma 偏差）、
 /// 正确的 NCHW 输出转置，且全程在原生后台线程执行，稳定性与速度都更优。
 class ColorizationService {
@@ -29,7 +29,7 @@ class ColorizationService {
 
   /// 与原生端通信的 MethodChannel
   static const MethodChannel _channel =
-      MethodChannel('com.github.wgh136.venera/colorize');
+      MethodChannel('com.github.kiastr.venera_ssr/colorize');
 
   /// 缓存目录路径
   String? _cacheDir;

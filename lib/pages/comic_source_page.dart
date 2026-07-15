@@ -284,7 +284,7 @@ class _BodyState extends State<_Body> {
 
   void help() {
     launchUrlString(
-      "https://github.com/venera-app/venera/blob/master/doc/comic_source.md",
+      "https://github.com/Kiastr/Venera-SSR/blob/master/doc/comic_source.md",
     );
   }
 

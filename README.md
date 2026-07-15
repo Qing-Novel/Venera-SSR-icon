@@ -6,7 +6,7 @@ A revision comic reader that support different resource source can use anime4k t
 
 ## Features
 
-正在feature/colorization分支测试本地ai实时黑白漫画上色功能
+正在 feature/colorization 分支测试本地 AI 实时黑白漫画上色功能
 
 - Read local comics
 - Use javascript to create comic sources

@@ -1,4 +1,4 @@
-package com.github.wgh136.venera.colorize
+package com.github.kiastr.venera_ssr.colorize
 
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
