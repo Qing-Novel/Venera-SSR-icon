@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   path_provider: any
+  shared_preferences: ^2.3.0
   intl: any
   window_manager: ^0.4.3
   sqlite3: ^2.7.4

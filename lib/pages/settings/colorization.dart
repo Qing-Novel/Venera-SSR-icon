@@ -15,6 +15,9 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
   String _status = '';
+  String? _customModelPath;
+  List<String> _modelUrls = [];
+  bool _usingCustom = false;
 
   @override
   void initState() {
@@ -23,10 +26,15 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   }
 
   Future<void> _refreshModelStatus() async {
+    final custom = await ColorizationModelManager.getCustomModelPath();
+    final urls = await ColorizationModelManager.getModelUrls();
     final downloaded = await ColorizationModelManager.isModelDownloaded;
     if (mounted) {
       setState(() {
+        _customModelPath = custom;
+        _modelUrls = urls;
         _isModelDownloaded = downloaded;
+        _usingCustom = custom != null;
       });
     }
   }
@@ -94,6 +102,63 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
         _downloadProgress = 0.0;
       });
     }
+  }
+
+  /// 选择本地 .onnx 模型文件（优先级高于内置下载模型）
+  Future<void> _pickLocalModel() async {
+    try {
+      final xFile = await file_selector.openFile(
+        acceptedTypeGroups: <file_selector.XTypeGroup>[
+          file_selector.XTypeGroup(
+            label: 'ONNX Model',
+            extensions: ['onnx'],
+          ),
+        ],
+      );
+      if (xFile == null) return;
+      if (!xFile.name.toLowerCase().endsWith('.onnx')) {
+        if (mounted) context.showMessage(message: "Please select a .onnx file".tl);
+        return;
+      }
+      // 读取字节并物化到应用私有目录（Android 上为 content URI，需落盘）
+      final bytes = await xFile.readAsBytes();
+      await ColorizationModelManager.importCustomModel(bytes);
+      // 让服务立即感知新路径，无需重启
+      await ColorizationService.instance.checkModelAvailable();
+      await _refreshModelStatus();
+      if (mounted) context.showMessage(message: "Custom model selected".tl);
+    } catch (e) {
+      if (mounted) context.showMessage(message: "Failed to pick file: $e".tl);
+    }
+  }
+
+  /// 清除自选模型，回退到内置下载模型
+  Future<void> _clearCustomModel() async {
+    await ColorizationModelManager.setCustomModelPath(null);
+    await ColorizationService.instance.checkModelAvailable();
+    await _refreshModelStatus();
+    if (mounted) context.showMessage(message: "Reverted to built-in model".tl);
+  }
+
+  /// 添加一个自定义镜像 URL
+  Future<void> _addMirrorUrl() async {
+    await showInputDialog(
+      context: context,
+      title: "Add Mirror URL".tl,
+      hintText: "https://.../deoldify.onnx",
+      confirmText: "Add".tl,
+      onConfirm: (url) async {
+        await ColorizationModelManager.addModelUrl(url);
+        await _refreshModelStatus();
+        return null as Object?;
+      },
+    );
+  }
+
+  /// 删除指定下标的镜像 URL
+  Future<void> _removeMirrorUrl(int index) async {
+    await ColorizationModelManager.removeModelUrlAt(index);
+    await _refreshModelStatus();
   }
 
   @override
@@ -166,8 +231,9 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
                     LinearProgressIndicator(value: _downloadProgress),
                   ],
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
+                  if (!_usingCustom)
+                    Row(
+                      children: [
                       if (!_isModelDownloaded)
                         Expanded(
                           child: ElevatedButton.icon(
@@ -204,6 +270,104 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
             ),
           ),
         ),
+        // 自选本地模型文件
+        SliverToBoxAdapter(
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Custom Model File".tl,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _usingCustom
+                        ? "Using: ${path.basename(_customModelPath ?? '')}".tl
+                        : "Select a local .onnx model to override the built-in one"
+                            .tl,
+                    style: TextStyle(
+                      color: context.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _pickLocalModel,
+                          icon: const Icon(Icons.folder_open),
+                          label: Text("Select Model File".tl),
+                        ),
+                      ),
+                      if (_usingCustom) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _clearCustomModel,
+                            icon: const Icon(Icons.restore),
+                            label: Text("Use Built-in".tl),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 镜像 URL 管理
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              "Download Mirrors".tl,
+              style: TextStyle(
+                color: context.colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        ..._modelUrls.asMap().entries.map(
+              (e) => _MirrorUrlTile(
+                index: e.key,
+                url: e.value,
+                onDelete: _removeMirrorUrl,
+              ),
+            ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _addMirrorUrl,
+                    icon: const Icon(Icons.add),
+                    label: Text("Add Mirror URL".tl),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      await ColorizationModelManager.resetModelUrls();
+                      await _refreshModelStatus();
+                    },
+                    icon: const Icon(Icons.restart_alt),
+                    label: Text("Reset".tl),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
         ListTile(
           title: Text("Clear Colorization Cache".tl),
           trailing: const Icon(Icons.delete_sweep),
@@ -215,6 +379,39 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
           },
         ).toSliver(),
       ],
+    );
+  }
+}
+
+/// 镜像 URL 列表项
+class _MirrorUrlTile extends StatelessWidget {
+  final int index;
+  final String url;
+  final void Function(int) onDelete;
+
+  const _MirrorUrlTile({
+    required this.index,
+    required this.url,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverToBoxAdapter(
+      child: ListTile(
+        dense: true,
+        leading: Text('${index + 1}'),
+        title: Text(
+          url,
+          style: const TextStyle(fontSize: 12),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, size: 20),
+          onPressed: () => onDelete(index),
+        ),
+      ),
     );
   }
 }
