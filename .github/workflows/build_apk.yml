@@ -12,22 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Free disk space
-        # GitHub 免费 runner 磁盘有限，构建多 ABI 的 OpenCV/ONNX 原生库极易占满。
-        # 删除与 Android 构建无关的预装臃肿包（.NET/Haskell/CodeQL/模拟器/系统镜像等），
-        # 腾出 ~10GB+ 空间，规避 packageRelease 阶段 "No space left on device"。
-        # 注意：保留 Android SDK 核心与 NDK（构建需要），仅删 emulator/system-images。
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/PyPy
-          sudo rm -rf /usr/local/lib/android/sdk/emulator
-          sudo rm -rf /usr/local/lib/android/sdk/system-images
-          sudo apt-get clean
-          df -h / | tail -1
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
