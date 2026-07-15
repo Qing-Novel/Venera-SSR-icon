@@ -80,12 +80,12 @@ class ColorizePlugin : MethodChannel.MethodCallHandler {
                         result.error("COPY_FAILED", "Cannot open input stream for $uri", null)
                         return@execute
                     }
+                    var total = 0L
                     input.use {
                         val outFile = File(destPath)
                         outFile.parentFile?.mkdirs()
                         FileOutputStream(outFile).use { output ->
                             val buffer = ByteArray(64 * 1024)
-                            var total = 0L
                             var read: Int
                             while (input.read(buffer).also { read = it } != -1) {
                                 output.write(buffer, 0, read)
