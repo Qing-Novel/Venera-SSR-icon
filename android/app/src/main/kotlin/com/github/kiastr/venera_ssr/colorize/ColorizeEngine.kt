@@ -270,4 +270,10 @@ class ColorizeEngine {
     fun close() {
         modelManager.close()
     }
+
+    /// 丢弃已缓存的 ONNX 会话（仅关闭 session，不释放 env）。
+    /// 模型切换/导入/删除后调用，使下次推理按当前路径重新加载。
+    fun resetSession() {
+        modelManager.close()
+    }
 }

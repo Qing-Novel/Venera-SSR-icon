@@ -87,7 +87,8 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
       }
     } finally {
       _isDownloading = false;
-      // 主动刷新服务的模型路径缓存，使后续上色处理无需重启即可生效
+      // 模型文件已变更，失效原生会话缓存并刷新服务路径缓存
+      await ColorizationService.instance.resetNativeSession();
       await ColorizationService.instance.checkModelAvailable();
       await _refreshModelStatus();
       if (mounted) {
@@ -106,6 +107,7 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
     await ColorizationModelManager.clearModel();
     await ColorizationService.instance.clearCache();
     // 让服务感知模型已删除（重置 _modelPath，校验文件不存在）
+    await ColorizationService.instance.resetNativeSession();
     await ColorizationService.instance.checkModelAvailable();
     await _refreshModelStatus();
     if (mounted) {
@@ -133,14 +135,45 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
         if (mounted) context.showMessage(message: "Please select a .onnx file".tl);
         return;
       }
-      // 流式拷贝【直接到模型调用位置】（deoldify_artistic.onnx），
-      // 避免把整个 ~243MB 模型一次性读入内存触发 OOM 崩溃。
-      // openRead() 返回 Future<Stream>，必须 await 后才能 pipe。
-      await ColorizationModelManager.importCustomModel(
-        await xFile.openRead(),
-        xFile.name,
-      );
-      // 让服务立即感知新路径，无需重启
+      // 通过原生 ContentResolver 以 64KB 分块拷贝（不占内存、不拷坏），
+      // 直接落到模型调用位置 deoldify_artistic.onnx。
+      // 这是“选择外部模型崩溃”的根治：openRead() 在 content URI 下会把整文件读入内存
+      // （OOM）或产出损坏文件（原生 createSession 读到坏模型 → segfault）。
+      final uri = xFile.path; // content URI 或真实文件路径
+      final dir = await getApplicationSupportDirectory();
+      final targetPath = path.join(dir.path, ColorizationModelManager.modelFileName);
+      final bakPath = '$targetPath.bak';
+      final tempPath = '$targetPath.tmp';
+
+      // 已存在下载模型则先备份，便于“回退内置模型”还原
+      final targetFile = File(targetPath);
+      if (await targetFile.exists()) {
+        await targetFile.rename(bakPath);
+      }
+
+      int written;
+      try {
+        written = await ColorizationService.instance.copyUriTo(uri, tempPath);
+      } catch (e) {
+        // 拷贝失败：还原备份
+        if (await File(bakPath).exists()) await File(bakPath).rename(targetPath);
+        if (mounted) context.showMessage(message: "Failed to copy file: $e".tl);
+        return;
+      }
+
+      if (written < ColorizationModelManager.validModelMinSize) {
+        await File(tempPath).delete().catchError((_) {});
+        if (await File(bakPath).exists()) await File(bakPath).rename(targetPath);
+        if (mounted) context.showMessage(message: "File too small, invalid model".tl);
+        return;
+      }
+
+      await File(tempPath).rename(targetPath);
+      await File(bakPath).delete().catchError((_) {});
+
+      // 记账为自选模型 + 失效原生会话缓存 + 让服务立即感知新路径
+      await ColorizationModelManager.markCustomModelActive(xFile.name);
+      await ColorizationService.instance.resetNativeSession();
       await ColorizationService.instance.checkModelAvailable();
       await _refreshModelStatus();
       if (mounted) context.showMessage(message: "Custom model selected".tl);
@@ -152,6 +185,7 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   /// 清除自选模型，回退到内置（下载）模型
   Future<void> _clearCustomModel() async {
     await ColorizationModelManager.clearCustomModelSelection();
+    await ColorizationService.instance.resetNativeSession();
     await ColorizationService.instance.checkModelAvailable();
     await _refreshModelStatus();
     if (mounted) context.showMessage(message: "Reverted to built-in model".tl);
@@ -252,7 +286,7 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
                   Text(
                     _isModelDownloaded
                         ? "Model downloaded".tl
-                        : (_selectedVariant == 'ddcolor-int8'
+                        : (_selectedVariant == 'deoldify-int8'
                             ? "Model not downloaded (lightweight)".tl
                             : "Model not downloaded (~243MB)".tl),
                     style: TextStyle(

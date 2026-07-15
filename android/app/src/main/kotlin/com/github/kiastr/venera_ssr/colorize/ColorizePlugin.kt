@@ -1,12 +1,16 @@
 package com.github.kiastr.venera_ssr.colorize
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.opencv.android.OpenCVLoader
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
 /**
@@ -21,14 +25,19 @@ class ColorizePlugin : MethodChannel.MethodCallHandler {
     companion object {
         const val CHANNEL = "com.github.kiastr.venera_ssr/colorize"
 
-        fun registerWith(messenger: BinaryMessenger) {
+        fun registerWith(context: Context, messenger: BinaryMessenger) {
             val channel = MethodChannel(messenger, CHANNEL)
-            channel.setMethodCallHandler(ColorizePlugin())
+            channel.setMethodCallHandler(ColorizePlugin(context))
         }
     }
 
+    private val context: Context
     private val engine = ColorizeEngine()
     private val executor = Executors.newSingleThreadExecutor()
+
+    constructor(context: Context) {
+        this.context = context
+    }
 
     @Volatile
     private var openCvReady = false
@@ -45,6 +54,54 @@ class ColorizePlugin : MethodChannel.MethodCallHandler {
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == "resetSession") {
+            // 丢弃已缓存的 ONNX 会话，下次推理按当前模型路径重新加载。
+            // 切换/导入/删除模型后必须调用，否则 ModelManager 按路径缓存会沿用旧会话。
+            engine.resetSession()
+            result.success(null)
+            return
+        }
+        if (call.method == "copyUri") {
+            // 通过 ContentResolver 以有界分块（64KB）把 content URI / 文件路径拷贝到目标路径。
+            // 用于导入外部模型文件：避免把 ~243MB 模型一次性读入内存（OOM），
+            // 也避免 openRead 在 content URI 下不可靠的流式实现把文件拷坏。
+            val uri = call.argument<String>("uri")
+            val destPath = call.argument<String>("destPath")
+            if (uri == null || destPath == null) {
+                result.error("BAD_ARGS", "uri / destPath required", null)
+                return
+            }
+            executor.execute {
+                try {
+                    val resolver = context.contentResolver
+                    val srcUri = Uri.parse(uri)
+                    val input = resolver.openInputStream(srcUri)
+                    if (input == null) {
+                        result.error("COPY_FAILED", "Cannot open input stream for $uri", null)
+                        return@execute
+                    }
+                    input.use {
+                        val outFile = File(destPath)
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0L
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                total += read.toLong()
+                            }
+                            output.flush()
+                        }
+                    }
+                    result.success(total)
+                } catch (e: Throwable) {
+                    // 捕获 Throwable（含 OOM/IO 异常），以 PlatformException 返回而非让进程崩溃
+                    result.error("COPY_FAILED", e.message ?: "unknown error", null)
+                }
+            }
+            return
+        }
         if (call.method != "colorize") {
             result.notImplemented()
             return

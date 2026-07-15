@@ -139,6 +139,30 @@ class ColorizationService {
     }
   }
 
+  /// 通过原生 ContentResolver 把 content URI / 文件路径以有界分块（64KB）方式拷贝到 dest。
+  ///
+  /// 用于导入外部模型文件：避免把 ~243MB 模型一次性读入内存触发 OOM，
+  /// 也避免 `XFile.openRead()` 在 content URI 下不可靠的流式实现把文件拷坏
+  /// （这正是“选择外部模型崩溃”的根因——拷贝过程把整文件读入内存或产出损坏文件）。
+  /// 返回写入的字节数。
+  Future<int> copyUriTo(String uri, String dest) async {
+    final r = await _channel.invokeMethod<int>('copyUri', {
+      'uri': uri,
+      'destPath': dest,
+    });
+    return r ?? 0;
+  }
+
+  /// 丢弃原生端已缓存的 ONNX 会话，使下次推理按当前模型路径重新加载。
+  /// 导入/下载/删除模型后必须调用，否则 ModelManager 按路径缓存会沿用旧会话。
+  Future<void> resetNativeSession() async {
+    try {
+      await _channel.invokeMethod<void>('resetSession');
+    } catch (e, s) {
+      Log.error('Colorization', 'resetNativeSession failed: $e\n$s');
+    }
+  }
+
   /// 处理图片字节数据，返回上色后的 PNG 字节数据
   ///
   /// [imageBytes] 原始图片字节数据

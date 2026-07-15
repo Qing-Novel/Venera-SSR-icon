@@ -193,7 +193,7 @@ class MainActivity : FlutterFragmentActivity() {
             })
 
         // 图像上色原生核心（MethodChannel: com.github.kiastr.venera_ssr/colorize）
-        ColorizePlugin.registerWith(flutterEngine.dartExecutor.binaryMessenger)
+        ColorizePlugin.registerWith(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun getProxy(): String {

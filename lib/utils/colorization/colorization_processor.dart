@@ -38,7 +38,7 @@ class ColorizationModelManager {
   /// 自选外部模型的原始文件名（仅用于 UI 展示）
   static const String _customModelNameKey = 'colorization_custom_model_name';
 
-  /// 当前选中的模型变体：'deoldify' | 'ddcolor-int8'
+  /// 当前选中的模型变体：'deoldify' | 'deoldify-int8'
   static const String _variantKey = 'colorization_model_variant';
 
   static const List<String> _defaultModelUrls = [
@@ -48,16 +48,16 @@ class ColorizationModelManager {
     'https://github.com/instant-high/deoldify-onnx/releases/download/deoldify-onnx/deoldify.onnx',
   ];
 
-  /// DDColor int8 轻量版镜像（用户实测可直接复用现有推理逻辑，无需改动）
+  /// DeOldify int8 轻量版镜像（用户实测可直接复用现有推理逻辑，无需改动）
   static const List<String> _int8ModelUrls = [
-    'https://ghproxy.net/https://github.com/Kiastr/AiColorize/releases/download/models/ddcolor-int8.onnx',
-    'https://github.com/Kiastr/AiColorize/releases/download/models/ddcolor-int8.onnx',
+    'https://ghproxy.net/https://github.com/Kiastr/AiColorize/releases/download/models/deoldify-int8.onnx',
+    'https://github.com/Kiastr/AiColorize/releases/download/models/deoldify-int8.onnx',
   ];
 
   /// 可选模型变体（设置页切换下载源；推理逻辑不变）
   static const List<ColorizationModelVariant> modelVariants = [
     ColorizationModelVariant('deoldify', 'DeOldify Artistic'),
-    ColorizationModelVariant('ddcolor-int8', 'DDColor int8 (轻量)'),
+    ColorizationModelVariant('deoldify-int8', 'DeOldify int8 (轻量)'),
   ];
 
   /// 持久化的镜像 URL 列表（用户可编辑）；首次运行初始化为默认列表
@@ -150,65 +150,22 @@ class ColorizationModelManager {
     await prefs.remove(_customModelNameKey);
   }
 
-  /// 从用户选定的模型文件流导入，【直接复制到模型调用位置】。
-  ///
-  /// 采用流式拷贝（而非一次性 readAsBytes），避免把整个 ~243MB 模型一次性读入内存
-  /// 触发 OOM 崩溃（这是“选择外部模型后应用崩溃”的根因）。
-  /// 写入临时文件后再原子 rename 到模型调用位置，避免半截文件被原生端读到。
-  /// 若模型调用位置已存在下载模型，先备份为 .bak，便于“回退内置模型”时还原。
-  ///
-  /// [bytes] 文件字节流；[displayName] 原始文件名（仅用于展示）。
-  /// 返回最终落盘路径（即模型调用位置）。
-  static Future<String> importCustomModel(
-    Stream<List<int>> bytes,
-    String displayName,
-  ) async {
+  /// 标记“模型调用位置的文件”为自选外部模型（写 prefs + 刷新缓存路径）。
+  /// 实际文件拷贝由调用方经原生 [ColorizationService.copyUriTo] 通道完成，
+  /// 本方法只负责记账，使 UI/服务能识别当前处于自选模型状态。
+  static Future<void> markCustomModelActive(String displayName) async {
     final dir = await getApplicationSupportDirectory();
-    final targetPath = path.join(dir.path, modelFileName); // 模型调用位置
-    final bakPath = '$targetPath.bak';
-    final tempPath = '$targetPath.tmp';
-
-    // 已存在下载模型则先备份（导入成功后可删，回退时还原）
-    final targetFile = File(targetPath);
-    if (await targetFile.exists()) {
-      await targetFile.rename(bakPath);
-    }
-
-    final sink = File(tempPath).openWrite();
-    try {
-      await bytes.pipe(sink);
-    } catch (e) {
-      await sink.close().catchError((_) {});
-      await File(tempPath).delete().catchError((_) {});
-      // 还原备份
-      if (await File(bakPath).exists()) {
-        await File(bakPath).rename(targetPath);
-      }
-      throw Exception('Failed to import model: $e');
-    }
-    await sink.close();
-
-    final size = await File(tempPath).length();
-    if (size < _validModelMinSize) {
-      await File(tempPath).delete().catchError((_) {});
-      if (await File(bakPath).exists()) {
-        await File(bakPath).rename(targetPath);
-      }
-      throw Exception('File too small, invalid model');
-    }
-
-    // 原子落盘到模型调用位置
-    await File(tempPath).rename(targetPath);
-    await File(bakPath).delete().catchError((_) {}); // 导入成功，备份可删
-
+    final targetPath = path.join(dir.path, modelFileName);
     _cachedModelPath = targetPath;
     _customModelActive = true;
     _customModelName = displayName;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_customModelActiveKey, true);
     await prefs.setString(_customModelNameKey, displayName);
-    return targetPath;
   }
+
+  /// 有效模型的最小体积（字节），供 UI 侧拷贝后做体积校验
+  static int get validModelMinSize => _validModelMinSize;
 
   static String? _cachedModelPath;
   static bool _isDownloading = false;
@@ -259,12 +216,12 @@ class ColorizationModelManager {
 
   /// 取指定变体的下载 URL 列表（含镜像回退）
   static List<String> _urlsForVariant(String variant) {
-    if (variant == 'ddcolor-int8') return List.from(_int8ModelUrls);
+    if (variant == 'deoldify-int8') return List.from(_int8ModelUrls);
     return List.from(_defaultModelUrls); // 用户编辑的镜像列表在 downloadModel 内取
   }
 
   /// 手动触发模型下载，支持进度回调和断点续传。
-  /// [variant] 指定下载哪个变体（'deoldify' 默认，'ddcolor-int8' 轻量）。
+  /// [variant] 指定下载哪个变体（'deoldify' 默认，'deoldify-int8' 轻量）。
   static Future<void> downloadModel({
     String variant = 'deoldify',
     void Function(double progress)? onProgress,
@@ -296,11 +253,11 @@ class ColorizationModelManager {
       Exception? lastError;
       // deoldify 用用户可编辑的镜像列表；int8 用内置镜像
       final urls =
-          variant == 'ddcolor-int8'
+          variant == 'deoldify-int8'
               ? _urlsForVariant(variant)
               : await getModelUrls();
       final minSize =
-          variant == 'ddcolor-int8'
+          variant == 'deoldify-int8'
               ? _validModelMinSize
               : expectedFileSize ~/ 2;
 
