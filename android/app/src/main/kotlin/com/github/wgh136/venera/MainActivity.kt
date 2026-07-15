@@ -28,6 +28,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
+import com.github.wgh136.venera.colorize.ColorizePlugin
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -190,6 +191,9 @@ class MainActivity : FlutterFragmentActivity() {
                     textShareHandler = null
                 }
             })
+
+        // 图像上色原生核心（MethodChannel: com.github.wgh136.venera/colorize）
+        ColorizePlugin.registerWith(flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun getProxy(): String {

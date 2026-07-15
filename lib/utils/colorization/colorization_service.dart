@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:venera/foundation/log.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:venera/foundation/log.dart';
 
 import 'colorization_processor.dart';
 
@@ -13,6 +13,11 @@ import 'colorization_processor.dart';
 ///
 /// 基于 DeOldify ONNX 模型提供灰度图像上色功能，支持缓存机制以避免重复处理。
 /// 采用单例模式，通过 [ColorizationService.instance] 访问。
+///
+/// 推理实现：原生（Kotlin + OpenCV + ONNX Runtime），通过 MethodChannel
+/// [com.github.wgh136.venera/colorize] 调用。相比原纯 Dart `onnxruntime`
+/// 实现，原生方案有会话缓存、正确的 OpenCV LAB 后处理（无 sRGB gamma 偏差）、
+/// 正确的 NCHW 输出转置，且全程在原生后台线程执行，稳定性与速度都更优。
 class ColorizationService {
   ColorizationService._internal();
 
@@ -21,6 +26,10 @@ class ColorizationService {
   factory ColorizationService() => _instance;
 
   static ColorizationService get instance => _instance;
+
+  /// 与原生端通信的 MethodChannel
+  static const MethodChannel _channel =
+      MethodChannel('com.github.wgh136.venera/colorize');
 
   /// 缓存目录路径
   String? _cacheDir;
@@ -107,6 +116,29 @@ class ColorizationService {
     }
   }
 
+  /// 调用原生端完成上色推理
+  ///
+  /// 返回上色后的 PNG 字节；失败返回 null（不抛异常，保持与上层调用契约一致）。
+  Future<Uint8List?> _colorizeOnNative(
+    Uint8List imageBytes,
+    String modelPath,
+    double intensity,
+  ) async {
+    try {
+      final result = await _channel.invokeMethod<Uint8List>('colorize', {
+        'imageBytes': imageBytes,
+        'modelPath': modelPath,
+        'type': 'deoldify',
+        'useNnapi': false,
+        'intensity': intensity,
+      });
+      return result;
+    } catch (e, s) {
+      Log.error('Colorization', 'native colorize failed: $e\n$s');
+      return null;
+    }
+  }
+
   /// 处理图片字节数据，返回上色后的 PNG 字节数据
   ///
   /// [imageBytes] 原始图片字节数据
@@ -153,13 +185,7 @@ class ColorizationService {
       try {
         Log.info('Colorization', 'processing image $cacheKey, intensity: $intensity');
 
-        final params = ColorizationParams(
-          imageBytes: imageBytes,
-          modelPath: modelPath,
-          intensity: intensity,
-        );
-
-        final result = await compute(colorizeImage, params);
+        final result = await _colorizeOnNative(imageBytes, modelPath, intensity);
 
         if (result != null) {
           // 保存到缓存
