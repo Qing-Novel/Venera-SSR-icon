@@ -65,15 +65,20 @@ jobs:
           echo "--- new release notes preview ---"
           cat /tmp/new_body.md
 
-      - name: Create new release 2.1.3 with Action-built APK
+      - name: Create or update new release 2.1.3 with Action-built APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mapfile -t FILES < <(find apks -name '*.apk' -type f)
-          gh release create "$NEW_TAG" "${FILES[@]}" \
-            --repo Kiastr/Venera-SSR \
-            --title "$NEW_TAG" \
-            --notes-file /tmp/new_body.md \
-            --target "${{ github.event.workflow_run.head_sha }}"
-          echo "Done. New release $NEW_TAG assets:"
+          if gh release view "$NEW_TAG" --repo Kiastr/Venera-SSR >/dev/null 2>&1; then
+            echo "Release $NEW_TAG already exists; updating APK asset (idempotent)."
+            gh release upload "$NEW_TAG" "${FILES[@]}" --clobber --repo Kiastr/Venera-SSR
+          else
+            gh release create "$NEW_TAG" "${FILES[@]}" \
+              --repo Kiastr/Venera-SSR \
+              --title "$NEW_TAG" \
+              --notes-file /tmp/new_body.md \
+              --target "${{ github.event.workflow_run.head_sha }}"
+          fi
+          echo "Done. Release $NEW_TAG assets:"
           gh release view "$NEW_TAG" --repo Kiastr/Venera-SSR --json assets -q '.assets[].name'
