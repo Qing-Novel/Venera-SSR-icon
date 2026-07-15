@@ -1,0 +1,41 @@
+name: Publish APK to Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download existing build artifact (run 29405920694)
+        uses: actions/download-artifact@v4
+        with:
+          name: app-release-apk
+          run-id: 29405920694
+          path: apks
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate APK files
+        id: apks
+        run: |
+          echo "Downloaded contents:"
+          find apks -type f
+          mapfile -t FILES < <(find apks -name '*.apk' -type f)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "::error::No APK files found in artifact"
+            exit 1
+          fi
+          echo "Found ${#FILES[@]} APK(s):"
+          printf '  %s\n' "${FILES[@]}"
+
+      - name: Upload to latest release v2.1.2 (overwrite Android APKs)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t FILES < <(find apks -name '*.apk' -type f)
+          gh release upload 2.1.2 "${FILES[@]}" --clobber --repo Kiastr/Venera-SSR
+          echo "Done. Current release assets:"
+          gh release view 2.1.2 --repo Kiastr/Venera-SSR --json assets -q '.assets[].name'
