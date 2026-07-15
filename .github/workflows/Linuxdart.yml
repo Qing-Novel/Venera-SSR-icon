@@ -30,6 +30,9 @@ jobs:
       - name: Enable Linux support
         run: flutter config --enable-linux-desktop
         
+      - name: Run tests
+        run: flutter test test/anime4k_test.dart
+
       - name: Build Linux
         run: flutter build linux --release
         
