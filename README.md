@@ -8,6 +8,8 @@ A revision comic reader that support different resource source can use anime4k t
 
 正在feature/colorization分支测试本地ai实时上色黑白漫画功能
 
+支持webdav同步
+
 - Read local comics
 - Use javascript to create comic sources
 - Read comics from network sources
