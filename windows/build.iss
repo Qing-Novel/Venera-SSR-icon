@@ -4,7 +4,7 @@
 #define MyAppName "VeneraSSR"
 #define MyAppVersion "{{version}}"
 #define MyAppPublisher "nyne"
-#define MyAppURL "https://github.com/venera-app/venera"
+#define MyAppURL "https://github.com/Kiastr/Venera-SSR"
 #define MyAppExeName "venera.exe"
 #define RootPath "{{root_path}}"
 
