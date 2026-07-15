@@ -15,9 +15,10 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   bool _isDownloading = false;
   double _downloadProgress = 0.0;
   String _status = '';
-  String? _customModelPath;
+  String? _customModelName;
   List<String> _modelUrls = [];
   bool _usingCustom = false;
+  String _selectedVariant = 'deoldify';
 
   @override
   void initState() {
@@ -26,17 +27,28 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
   }
 
   Future<void> _refreshModelStatus() async {
-    final custom = await ColorizationModelManager.getCustomModelPath();
+    final usingCustom = await ColorizationModelManager.isCustomModelActive();
+    final customName = await ColorizationModelManager.getCustomModelName();
     final urls = await ColorizationModelManager.getModelUrls();
     final downloaded = await ColorizationModelManager.isModelDownloaded;
+    final variant = await ColorizationModelManager.getSelectedVariant();
     if (mounted) {
       setState(() {
-        _customModelPath = custom;
+        _customModelName = customName;
         _modelUrls = urls;
         _isModelDownloaded = downloaded;
-        _usingCustom = custom != null;
+        _usingCustom = usingCustom;
+        _selectedVariant = variant;
       });
     }
+  }
+
+  String get _selectedVariantLabel {
+    final v = ColorizationModelManager.modelVariants.firstWhere(
+      (e) => e.id == _selectedVariant,
+      orElse: () => const ColorizationModelVariant('deoldify', 'DeOldify Artistic'),
+    );
+    return v.label;
   }
 
   Future<void> _downloadModel() async {
@@ -49,6 +61,7 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
 
     try {
       await ColorizationModelManager.downloadModel(
+        variant: _selectedVariant,
         onProgress: (progress) {
           if (mounted) {
             setState(() {
@@ -120,9 +133,13 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
         if (mounted) context.showMessage(message: "Please select a .onnx file".tl);
         return;
       }
-      // 流式拷贝到应用私有目录（Android 上为 content URI，需落盘），
-      // 避免把整个 ~243MB 模型一次性读入内存触发 OOM 崩溃
-      await ColorizationModelManager.importCustomModel(xFile.openRead());
+      // 流式拷贝【直接到模型调用位置】（deoldify_artistic.onnx），
+      // 避免把整个 ~243MB 模型一次性读入内存触发 OOM 崩溃。
+      // openRead() 返回 Future<Stream>，必须 await 后才能 pipe。
+      await ColorizationModelManager.importCustomModel(
+        await xFile.openRead(),
+        xFile.name,
+      );
       // 让服务立即感知新路径，无需重启
       await ColorizationService.instance.checkModelAvailable();
       await _refreshModelStatus();
@@ -132,9 +149,9 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
     }
   }
 
-  /// 清除自选模型，回退到内置下载模型
+  /// 清除自选模型，回退到内置（下载）模型
   Future<void> _clearCustomModel() async {
-    await ColorizationModelManager.setCustomModelPath(null);
+    await ColorizationModelManager.clearCustomModelSelection();
     await ColorizationService.instance.checkModelAvailable();
     await _refreshModelStatus();
     if (mounted) context.showMessage(message: "Reverted to built-in model".tl);
@@ -202,15 +219,42 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "DeOldify Artistic ONNX".tl,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _selectedVariantLabel,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
+                  // 模型变体选择器（仅切换下载源，推理逻辑不变）
+                  Wrap(
+                    spacing: 8,
+                    children:
+                        ColorizationModelManager.modelVariants.map((v) {
+                          final selected = _selectedVariant == v.id;
+                          return ChoiceChip(
+                            label: Text(v.label.tl),
+                            selected: selected,
+                            onSelected: (_) async {
+                              await ColorizationModelManager.setSelectedVariant(
+                                v.id,
+                              );
+                              await _refreshModelStatus();
+                            },
+                          );
+                        }).toList(),
+                  ),
+                  const SizedBox(height: 8),
                   Text(
                     _isModelDownloaded
                         ? "Model downloaded".tl
-                        : "Model not downloaded (~243MB)".tl,
+                        : (_selectedVariant == 'ddcolor-int8'
+                            ? "Model not downloaded (lightweight)".tl
+                            : "Model not downloaded (~243MB)".tl),
                     style: TextStyle(
                       color: context.colorScheme.onSurfaceVariant,
                       fontSize: 12,
@@ -286,7 +330,7 @@ class _ColorizationSettingsState extends State<ColorizationSettings> {
                   const SizedBox(height: 4),
                   Text(
                     _usingCustom
-                        ? "Using: ${path.basename(_customModelPath ?? '')}".tl
+                        ? "Using: ${_customModelName ?? 'custom model'}".tl
                         : "Select a local .onnx model to override the built-in one"
                             .tl,
                     style: TextStyle(
