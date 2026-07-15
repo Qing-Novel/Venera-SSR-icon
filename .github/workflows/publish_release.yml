@@ -1,23 +1,28 @@
 name: Publish APK to Release
 
+# 自动发布：当 feature/colorization 上的 "Build Android APK" 构建成功完成后触发，
+# 直接取触发本次事件的构建产物（run-id = github.event.workflow_run.id），
+# 覆盖上传到最新 release v2.1.2（仅替换同名 Android APK，不改动介绍/不新增版本号）。
 on:
-  # Triggered by pushing this file (PAT lacks `workflow` scope for dispatch)
-  push:
-    paths:
-      - '.github/workflows/publish_release.yml'
+  workflow_run:
+    workflows: ["Build Android APK"]
+    branches: [feature/colorization]
+    types: [completed]
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download existing build artifact (run 29405920694)
+      - name: Download build artifact from the triggering run
         uses: actions/download-artifact@v4
         with:
           name: app-release-apk
-          run-id: 29405920694
+          run-id: ${{ github.event.workflow_run.id }}
           path: apks
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
