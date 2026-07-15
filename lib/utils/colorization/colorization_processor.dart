@@ -48,16 +48,16 @@ class ColorizationModelManager {
     'https://github.com/instant-high/deoldify-onnx/releases/download/deoldify-onnx/deoldify.onnx',
   ];
 
-  /// DeOldify int8 轻量版镜像（用户实测可直接复用现有推理逻辑，无需改动）
+  /// DeOldify int8 轻量版镜像（实验性功能，用户实测可直接复用现有推理逻辑，无需改动）
   static const List<String> _int8ModelUrls = [
-    'https://ghproxy.net/https://github.com/Kiastr/AiColorize/releases/download/models/deoldify-int8.onnx',
-    'https://github.com/Kiastr/AiColorize/releases/download/models/deoldify-int8.onnx',
+    'https://ghproxy.net/https://github.com/Kiastr/AiColorize/releases/download/models/deoldify_int8.onnx',
+    'https://github.com/Kiastr/AiColorize/releases/download/models/deoldify_int8.onnx',
   ];
 
   /// 可选模型变体（设置页切换下载源；推理逻辑不变）
   static const List<ColorizationModelVariant> modelVariants = [
     ColorizationModelVariant('deoldify', 'DeOldify Artistic'),
-    ColorizationModelVariant('deoldify-int8', 'DeOldify int8 (轻量)'),
+    ColorizationModelVariant('deoldify-int8', 'DeOldify int8 (轻量, 实验性)'),
   ];
 
   /// 持久化的镜像 URL 列表（用户可编辑）；首次运行初始化为默认列表
