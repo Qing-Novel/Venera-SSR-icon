@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import com.manga.translate.TranslationLanguage
 import com.manga.translate.TranslationPipeline
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -23,24 +24,18 @@ import java.util.concurrent.Executors
  *   result: Map { name, width, height, bubbles: [ { id, text, rect:{left,top,right,bottom}, source } ] }
  *           未配置 LLM 时返回 TRANSLATE_FAILED（pipeline 返回 null）。
  */
-class TranslatePlugin : MethodChannel.MethodCallHandler {
+class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHandler {
 
     companion object {
         const val CHANNEL = "com.github.kiastr.venera_ssr/translate"
 
         fun registerWith(context: Context, messenger: BinaryMessenger) {
-            val channel = MethodChannel(messenger, CHANNEL)
-            channel.setMethodCallHandler(TranslatePlugin(context))
+            MethodChannel(messenger, CHANNEL).setMethodCallHandler(TranslatePlugin(context))
         }
     }
 
-    private val context: Context
     private val pipeline = TranslationPipeline(context)
     private val executor = Executors.newSingleThreadExecutor()
-
-    constructor(context: Context) {
-        this.context = context
-    }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (call.method != "translateImage") {
@@ -59,18 +54,16 @@ class TranslatePlugin : MethodChannel.MethodCallHandler {
             try {
                 inputFile = File(context.cacheDir, "translate_in_${System.currentTimeMillis()}.png")
                 FileOutputStream(inputFile).use { it.write(imageBytes) }
-                val lang = try {
-                    TranslationLanguage.valueOf(languageName)
-                } catch (_: Exception) {
-                    TranslationLanguage.JA_TO_ZH
+                val lang = TranslationLanguage.fromPref(languageName)
+                val translation = runBlocking {
+                    pipeline.translateImage(
+                        imageFile = inputFile,
+                        glossary = mutableMapOf(),
+                        forceOcr = forceOcr,
+                        language = lang,
+                        onProgress = { }
+                    )
                 }
-                val translation = pipeline.translateImage(
-                    imageFile = inputFile,
-                    glossary = mutableMapOf(),
-                    forceOcr = forceOcr,
-                    language = lang,
-                    onProgress = { }
-                )
                 if (translation == null) {
                     result.error("TRANSLATE_FAILED", "pipeline returned null (LLM not configured?)", null)
                     return@execute

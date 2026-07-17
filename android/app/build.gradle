@@ -159,4 +159,8 @@ dependencies {
     implementation 'io.github.awxkee:avif-coder:2.2.1'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+    // jedzqer 核心代码显式依赖的 AndroidX（避免仅依赖传递解析导致的 unresolved reference）
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.core:core-ktx:1.13.1'
 }
