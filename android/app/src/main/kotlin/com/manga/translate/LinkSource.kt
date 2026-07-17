@@ -1,4 +1,5 @@
 package com.manga.translate
+import com.github.kiastr.venera_ssr.R
 
 enum class LinkSource(
     val prefValue: String,

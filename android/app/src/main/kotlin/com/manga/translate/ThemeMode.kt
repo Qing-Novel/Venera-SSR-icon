@@ -1,4 +1,5 @@
 package com.manga.translate
+import com.github.kiastr.venera_ssr.R
 
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate

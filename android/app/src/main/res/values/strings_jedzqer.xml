@@ -49,4 +49,14 @@
     <string name="translation_source_traditional_chinese">繁體中文</string>
     <string name="tutorial_option_gitee_recommended">鏡像站</string>
     <string name="tutorial_option_github">GitHub</string>
+    <!-- 补充：新增 vendor 的枚举/接口文件（FloatingBallGestureAction / ReadingDisplayMode / ReadingPageAnimationMode）所需字符串 -->
+    <string name="floating_gesture_action_translate">开始翻译</string>
+    <string name="floating_gesture_action_open_menu">打开菜单</string>
+    <string name="floating_gesture_action_clear_screen">清屏</string>
+    <string name="floating_gesture_action_none">无操作</string>
+    <string name="floating_gesture_action_swipe_translate">划屏翻译</string>
+    <string name="reading_display_fit_width">等宽显示</string>
+    <string name="reading_display_fit_height">等高显示</string>
+    <string name="reading_page_animation_horizontal_slide">水平平移</string>
+    <string name="reading_page_animation_none">无动画</string>
 </resources>

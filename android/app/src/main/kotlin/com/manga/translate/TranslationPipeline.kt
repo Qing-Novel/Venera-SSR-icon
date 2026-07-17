@@ -1,4 +1,5 @@
 package com.manga.translate
+import com.github.kiastr.venera_ssr.R
 
 import android.content.Context
 import android.graphics.Bitmap
