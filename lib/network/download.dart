@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/widgets.dart' show ChangeNotifier;
@@ -14,6 +15,7 @@ import 'package:venera/network/images.dart';
 import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
+import 'package:venera/utils/translation/translation_service.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'file_downloader.dart';
@@ -410,6 +412,27 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
 
     LocalManager().completeTask(this);
     stopRecorder();
+    _maybeTranslateAfterDownload();
+  }
+
+  /// 下载完成后，若用户在设置中开启了「下载后自动翻译」，则在后台批量翻译本漫画各页。
+  void _maybeTranslateAfterDownload() {
+    if (appdata.settings['translateAfterDownload'] != true) return;
+    final language =
+        (appdata.settings['translationLanguage'] as String?) ?? 'ja_to_zh';
+    final forceOcr = appdata.settings['translationForceOcr'] == true;
+    final hasChapters = comic?.chapters != null;
+    final chapterKeys = hasChapters
+        ? comic!.chapters!.allChapters.keys.toList()
+        : <String>[];
+    unawaited(_enqueueTranslationAfterDownload(
+      id: comicId,
+      comicType: comicType,
+      hasChapters: hasChapters,
+      chapterKeys: chapterKeys,
+      language: language,
+      forceOcr: forceOcr,
+    ));
   }
 
   @override
@@ -800,6 +823,23 @@ class ArchiveDownloadTask extends DownloadTask {
     await archiveFile.deleteIgnoreError();
 
     LocalManager().completeTask(this);
+    _maybeTranslateAfterDownload();
+  }
+
+  /// 下载完成后，若用户在设置中开启了「下载后自动翻译」，则在后台批量翻译本漫画各页。
+  void _maybeTranslateAfterDownload() {
+    if (appdata.settings['translateAfterDownload'] != true) return;
+    final language =
+        (appdata.settings['translationLanguage'] as String?) ?? 'ja_to_zh';
+    final forceOcr = appdata.settings['translationForceOcr'] == true;
+    unawaited(_enqueueTranslationAfterDownload(
+      id: comic.id,
+      comicType: comicType,
+      hasChapters: false,
+      chapterKeys: const [],
+      language: language,
+      forceOcr: forceOcr,
+    ));
   }
 
   static Future<void> _extractArchive(String archive, String outDir) async {
@@ -875,5 +915,53 @@ class ArchiveDownloadTask extends DownloadTask {
       downloadedChapters: [],
       createdAt: DateTime.now(),
     );
+  }
+}
+
+/// 下载完成后在后台批量翻译已保存的漫画页。
+///
+/// 通过 [LocalManager.getImages] 枚举真实落盘路径（与原下载顺序一致），
+/// 逐页调用 [TranslationService.processFile]。失败（未配置 LLM 等）静默跳过，
+/// 不阻塞下载完成回调（本函数由 [DownloadTask] 在 `completeTask` 后 `unawaited` 触发）。
+Future<void> _enqueueTranslationAfterDownload({
+  required String id,
+  required ComicType comicType,
+  required bool hasChapters,
+  required List<String> chapterKeys,
+  required String language,
+  required bool forceOcr,
+}) async {
+  try {
+    final lm = LocalManager();
+    final pageUrls = <String>[];
+    if (hasChapters) {
+      for (var i = 0; i < chapterKeys.length; i++) {
+        final urls = await lm.getImages(id, comicType, i + 1);
+        pageUrls.addAll(urls);
+      }
+    } else {
+      final urls = await lm.getImages(id, comicType, 0);
+      pageUrls.addAll(urls);
+    }
+    if (pageUrls.isEmpty) {
+      Log.warning('Translation', 'no pages found for batch translate: $id');
+      return;
+    }
+    Log.info('Translation',
+        'batch translate start: ${pageUrls.length} pages for $id (lang=$language)');
+    for (final url in pageUrls) {
+      final file =
+          url.startsWith('file://') ? url.substring('file://'.length) : url;
+      if (await File(file).exists()) {
+        await TranslationService.instance.processFile(
+          filePath: file,
+          language: language,
+          forceOcr: forceOcr,
+        );
+      }
+    }
+    Log.info('Translation', 'batch translate done for $id');
+  } catch (e, s) {
+    Log.error('Translation', 'batch translate after download failed: $e\n$s');
   }
 }

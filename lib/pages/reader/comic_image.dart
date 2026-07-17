@@ -92,6 +92,10 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
   Uint8List? _colorizedBytes;
   bool _isColorizing = false;
 
+  // 漫画翻译相关变量
+  Uint8List? _translatedBytes;
+  bool _isTranslating = false;
+
   static final Map<int, Size> _cache = {};
 
   /// 追踪所有活跃的实例，用于在 clear() 时重置所有实例的处理状态
@@ -108,8 +112,11 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         instance._isUpscaling = false;
         instance._colorizedBytes = null;
         instance._isColorizing = false;
+        instance._translatedBytes = null;
+        instance._isTranslating = false;
         instance._triggerImageUpscale();
         instance._triggerImageColorization();
+        instance._triggerImageTranslation();
       }
     }
   }
@@ -142,6 +149,7 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     _resolveImage();
     _triggerImageUpscale();
     _triggerImageColorization();
+    _triggerImageTranslation();
 
     if (TickerMode.of(context)) {
       _listenToStream();
@@ -163,9 +171,12 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
       _colorizedBytes = null;
       _isUpscaling = false;
       _isColorizing = false;
+      _translatedBytes = null;
+      _isTranslating = false;
       _resolveImage();
       _triggerImageUpscale();
       _triggerImageColorization();
+      _triggerImageTranslation();
     }
   }
 
@@ -373,6 +384,101 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     } catch (e, s) {
       Log.error('ComicImage', 'Colorization processing error: $e', s);
       _isColorizing = false;
+    }
+  }
+
+  /// 触发漫画翻译处理（阅读时实时翻译）
+  Future<void> _triggerImageTranslation() async {
+    final provider = _getReaderImageProvider();
+
+    // 检查是否启用了翻译功能
+    bool enableTranslation;
+    if (provider != null) {
+      enableTranslation = appdata.settings.getReaderSetting(
+            provider.cid,
+            provider.sourceKey ?? "",
+            'enableTranslation',
+          ) ==
+          true;
+    } else {
+      enableTranslation = appdata.settings['enableTranslation'] == true;
+    }
+
+    if (!enableTranslation) {
+      if (_translatedBytes != null) {
+        setState(() {
+          _translatedBytes = null;
+        });
+      }
+      return;
+    }
+
+    if (_translatedBytes != null || _isTranslating) return;
+
+    // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
+    if (provider == null) return;
+
+    _isTranslating = true;
+
+    try {
+      final chunkController = StreamController<ImageChunkEvent>();
+      chunkController.stream.listen(null, onError: (_) {});
+      final imageBytes = await provider.load(
+        chunkController,
+        () {},
+      );
+      unawaited(chunkController.close());
+
+      if (imageBytes.isEmpty) {
+        Log.warning('ComicImage', 'Translation: empty image bytes for ${provider.key}');
+        _isTranslating = false;
+        return;
+      }
+
+      // 加载过程中 widget 可能已被销毁
+      if (!mounted) {
+        _isTranslating = false;
+        return;
+      }
+
+      Log.info('ComicImage', 'Translation: start processing ${provider.key}');
+
+      final result = await TranslationService.instance.processImage(
+        imageBytes: imageBytes,
+        cacheKey: provider.key,
+        language: (appdata.settings.getReaderSetting(
+                  provider.cid,
+                  provider.sourceKey ?? "",
+                  'translationLanguage',
+                ) as String?) ??
+            (appdata.settings['translationLanguage'] as String?) ??
+            'ja_to_zh',
+        forceOcr: appdata.settings.getReaderSetting(
+              provider.cid,
+              provider.sourceKey ?? "",
+              'translationForceOcr',
+            ) ==
+            true,
+      );
+
+      if (!mounted) {
+        _isTranslating = false;
+        return;
+      }
+
+      if (result != null) {
+        Log.info('ComicImage', 'Translation: done ${provider.key}');
+        setState(() {
+          _translatedBytes = result;
+          _isTranslating = false;
+        });
+      } else {
+        Log.warning('ComicImage', 'Translation: null result for ${provider.key}');
+        _isTranslating = false;
+      }
+    } catch (e, s) {
+      Log.error('ComicImage', 'Translation processing error: $e', s);
+      _isTranslating = false;
     }
   }
 
@@ -624,6 +730,33 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
         // 使用超分后的图像
         Widget result = Image.memory(
           _upscaledBytes!,
+          width: width,
+          height: height,
+          fit: widget.fit ?? BoxFit.contain,
+          filterQuality: widget.filterQuality,
+          alignment: widget.alignment,
+          repeat: widget.repeat,
+        );
+        if (!widget.excludeFromSemantics) {
+          result = Semantics(
+            container: widget.semanticLabel != null,
+            image: true,
+            label: widget.semanticLabel ?? '',
+            child: result,
+          );
+        }
+        result = SizedBox(
+          width: width,
+          height: height,
+          child: Center(
+            child: result,
+          ),
+        );
+        return result;
+      } else if (_translatedBytes != null && _imageInfo != null) {
+        // 使用翻译后的图像（端上重绘译文）
+        Widget result = Image.memory(
+          _translatedBytes!,
           width: width,
           height: height,
           fit: widget.fit ?? BoxFit.contain,

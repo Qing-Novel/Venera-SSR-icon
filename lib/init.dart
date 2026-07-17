@@ -50,6 +50,7 @@ Future<void> init() async {
       OpenCC.init(),
       Anime4KService.instance.init().wait(),
       ColorizationService.instance.init().wait(),
+      TranslationService.instance.init().wait(),
     ];
     await Future.wait(futures);
   } catch (e, s) {

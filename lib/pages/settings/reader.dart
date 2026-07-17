@@ -220,6 +220,12 @@ class _ReaderSettingsState extends State<ReaderSettings> {
           trailing: const Icon(Icons.arrow_forward_ios, size: 16),
           onTap: () => context.to(() => const ColorizationSettings()),
         ).toSliver(),
+        ListTile(
+          title: Text("Translation Settings".tl),
+          subtitle: Text("Download/reader translation & language".tl),
+          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          onTap: () => context.to(() => const TranslationSettings()),
+        ).toSliver(),
         SelectSetting(
           title: "Reading mode".tl,
           settingKey: "readerMode",

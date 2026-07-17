@@ -233,6 +233,10 @@ class Settings with ChangeNotifier {
     'anime4KPushGradStrength': 1.0, // gradient refinement strength (0.0 - 1.0)
     'enableColorization': false, // enable image colorization
     'colorizationIntensity': 1.0, // colorization intensity (0.3 - 1.2)
+    'translateAfterDownload': false, // 下载完成后在后台批量翻译
+    'enableTranslation': false, // 阅读时实时翻译
+    'translationLanguage': 'ja_to_zh', // 翻译目标语言 pref 值
+    'translationForceOcr': false, // 翻译时强制重新 OCR
   };
 
   operator [](String key) {

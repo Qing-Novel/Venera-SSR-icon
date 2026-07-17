@@ -25,6 +25,7 @@ import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/anime4k/anime4k_service.dart';
 import 'package:venera/utils/colorization/colorization_processor.dart';
 import 'package:venera/utils/colorization/colorization_service.dart';
+import 'package:venera/utils/translation/translation_service.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:yaml/yaml.dart';
 
@@ -39,6 +40,7 @@ part 'network.dart';
 part 'debug.dart';
 part 'anime4k.dart';
 part 'colorization.dart';
+part 'translation.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({this.initialPage = -1, super.key});
@@ -66,6 +68,7 @@ class _SettingsPageState extends State<SettingsPage> {
     "About",
     "Anime4K",
     "Colorization",
+    "Translation",
     "Debug"
   ];
 
@@ -79,6 +82,7 @@ class _SettingsPageState extends State<SettingsPage> {
     Icons.info,
     Icons.auto_awesome,
     Icons.palette,
+    Icons.translate,
     Icons.bug_report,
   ];
 
@@ -277,7 +281,8 @@ class _SettingsPageState extends State<SettingsPage> {
       6 => const AboutSettings(),
       7 => const Anime4KSettings(),
       8 => const ColorizationSettings(),
-      9 => const DebugPage(),
+      9 => const TranslationSettings(),
+      10 => const DebugPage(),
       _ => throw UnimplementedError()
     };
   }
@@ -305,7 +310,8 @@ class _SettingsDetailPage extends StatelessWidget {
       6 => const AboutSettings(),
       7 => const Anime4KSettings(),
       8 => const ColorizationSettings(),
-      9 => const DebugPage(),
+      9 => const TranslationSettings(),
+      10 => const DebugPage(),
       _ => throw UnimplementedError()
     };
   }
