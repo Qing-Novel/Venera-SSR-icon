@@ -6,9 +6,12 @@ A revision comic reader that support different resource source can use anime4k t
 
 ## Features
 
-正在 feature/colorization 分支测试本地 AI 实时黑白漫画上色功能的更多可选模型
+黑白漫画上色Black and white cartoon coloring
+（正在 feature/colorization 分支测试本地 AI 实时黑白漫画上色功能的更多可选模型）
 
 支持webdav同步
+
+正在feature/translation-embed分支测试漫画文字替换翻译功能Cartoon comes with font translation function
 
 - Read local comics
 - Use javascript to create comic sources
