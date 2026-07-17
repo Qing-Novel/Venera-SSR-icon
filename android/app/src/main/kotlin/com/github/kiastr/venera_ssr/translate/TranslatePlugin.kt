@@ -7,7 +7,10 @@ import android.graphics.RectF
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import com.manga.translate.ApiFormat
+import com.manga.translate.ApiSettings
 import com.manga.translate.BubbleRenderer
+import com.manga.translate.SettingsStore
 import com.manga.translate.TranslationLanguage
 import com.manga.translate.TranslationPipeline
 import kotlinx.coroutines.runBlocking
@@ -48,10 +51,46 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
     private val executor = Executors.newSingleThreadExecutor()
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method != "translateImage") {
-            result.notImplemented()
-            return
+        when (call.method) {
+            "translateImage" -> handleTranslate(call, result)
+            // 读取已保存的远程 LLM 配置（apiUrl / apiKey / modelName / apiFormat）
+            "getLlmConfig" -> {
+                val s = SettingsStore(context).load()
+                result.success(
+                    mapOf(
+                        "apiUrl" to s.apiUrl,
+                        "apiKey" to s.apiKey,
+                        "modelName" to s.modelName,
+                        "apiFormat" to s.apiFormat.prefValue,
+                        "configured" to s.isValid()
+                    )
+                )
+            }
+            // 保存远程 LLM 配置
+            "setLlmConfig" -> {
+                val apiUrl = call.argument<String>("apiUrl") ?: ""
+                val apiKey = call.argument<String>("apiKey") ?: ""
+                val modelName = call.argument<String>("modelName") ?: ""
+                val apiFormat = ApiFormat.fromPref(call.argument<String>("apiFormat"))
+                try {
+                    SettingsStore(context).save(
+                        ApiSettings(
+                            apiUrl = apiUrl,
+                            apiKey = apiKey,
+                            modelName = modelName,
+                            apiFormat = apiFormat
+                        )
+                    )
+                    result.success(true)
+                } catch (e: Throwable) {
+                    result.error("SAVE_FAILED", e.message ?: "save failed", null)
+                }
+            }
+            else -> result.notImplemented()
         }
+    }
+
+    private fun handleTranslate(call: MethodCall, result: MethodChannel.Result) {
         val imageBytes = call.argument<ByteArray>("imageBytes")
         if (imageBytes == null) {
             result.error("BAD_ARGS", "imageBytes required", null)

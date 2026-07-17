@@ -236,6 +236,46 @@ class TranslationService {
     }
   }
 
+  /// 读取原生端保存的远程 LLM 配置（apiUrl / apiKey / modelName / apiFormat / configured）。
+  Future<Map<String, dynamic>?> getLlmConfig() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getLlmConfig');
+      return res?.cast<String, dynamic>();
+    } catch (e, s) {
+      Log.error('Translation', 'getLlmConfig failed: $e\n$s');
+      return null;
+    }
+  }
+
+  /// 远程 LLM 是否已配置（apiUrl + apiKey + modelName 均非空）。
+  Future<bool> isLlmConfigured() async {
+    final cfg = await getLlmConfig();
+    return cfg?['configured'] == true;
+  }
+
+  /// 保存远程 LLM 配置到原生端（jedzqer SettingsStore）。
+  /// 配置变更后清空会话负缓存，使此前因"未配置"被跳过的页可重新翻译。
+  Future<bool> setLlmConfig({
+    required String apiUrl,
+    required String apiKey,
+    required String modelName,
+    required String apiFormat,
+  }) async {
+    try {
+      await _channel.invokeMethod<bool>('setLlmConfig', {
+        'apiUrl': apiUrl,
+        'apiKey': apiKey,
+        'modelName': modelName,
+        'apiFormat': apiFormat,
+      });
+      _negativeCache.clear();
+      return true;
+    } catch (e, s) {
+      Log.error('Translation', 'setLlmConfig failed: $e\n$s');
+      return false;
+    }
+  }
+
   /// 清除所有翻译缓存（含负缓存）
   Future<void> clearCache() async {
     _negativeCache.clear();
