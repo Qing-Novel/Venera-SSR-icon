@@ -154,4 +154,9 @@ dependencies {
     // 图像上色原生核心：OpenCV（图像预处理/后处理）+ ONNX Runtime（模型推理）
     implementation 'org.opencv:opencv:4.11.0'
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.0'
+    // 漫画翻译嵌入（方案 B）：端上气泡检测 + OCR（翻译仍走远程 LLM）
+    implementation 'org.tensorflow:tensorflow-lite:2.17.0'
+    implementation 'io.github.awxkee:avif-coder:2.2.1'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
 }

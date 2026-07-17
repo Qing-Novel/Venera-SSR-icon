@@ -1,0 +1,41 @@
+package com.manga.translate
+
+import android.content.Context
+import androidx.core.content.edit
+
+class UpdateIgnoreStore(context: Context) {
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun loadIgnoredVersionCode(): Int {
+        return prefs.getInt(KEY_IGNORED_VERSION_CODE, NO_VERSION)
+    }
+
+    fun saveIgnoredVersionCode(versionCode: Int) {
+        if (versionCode <= 0) return
+        prefs.edit() {
+                putInt(KEY_IGNORED_VERSION_CODE, versionCode)
+            }
+    }
+
+    fun isIgnored(versionCode: Int): Boolean {
+        if (versionCode <= 0) return false
+        return loadIgnoredVersionCode() == versionCode
+    }
+
+    fun loadAcceptPreviewUpdates(): Boolean {
+        return prefs.getBoolean(KEY_ACCEPT_PREVIEW_UPDATES, false)
+    }
+
+    fun saveAcceptPreviewUpdates(enabled: Boolean) {
+        prefs.edit {
+            putBoolean(KEY_ACCEPT_PREVIEW_UPDATES, enabled)
+        }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "manga_translate_update"
+        private const val KEY_IGNORED_VERSION_CODE = "ignored_version_code"
+        private const val KEY_ACCEPT_PREVIEW_UPDATES = "accept_preview_updates"
+        private const val NO_VERSION = -1
+    }
+}

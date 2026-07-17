@@ -29,6 +29,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.GeneratedPluginRegistrant
 import com.github.kiastr.venera_ssr.colorize.ColorizePlugin
+import com.github.kiastr.venera_ssr.translate.TranslatePlugin
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -194,6 +195,8 @@ class MainActivity : FlutterFragmentActivity() {
 
         // 图像上色原生核心（MethodChannel: com.github.kiastr.venera_ssr/colorize）
         ColorizePlugin.registerWith(this, flutterEngine.dartExecutor.binaryMessenger)
+        // 漫画翻译原生核心（MethodChannel: com.github.kiastr.venera_ssr/translate）
+        TranslatePlugin.registerWith(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     private fun getProxy(): String {

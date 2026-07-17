@@ -19,6 +19,11 @@
 # 上色插件与方法通道（防止 R8 误删未被直接引用的入口）
 -keep class com.github.kiastr.venera_ssr.colorize.** { *; }
 
+# 漫画翻译嵌入（方案 B）：保留端上检测 + OCR 核心（com.manga.translate 为 vendored 包）
+-keep class com.manga.translate.** { *; }
+-keep class com.github.kiastr.venera_ssr.translate.** { *; }
+-dontwarn com.manga.translate.**
+
 # ============================================================
 # Flutter embedding（PlayStoreDeferredComponentManager /
 # FlutterPlayStoreSplitApplication）引用了 com.google.android.play.core.*，
