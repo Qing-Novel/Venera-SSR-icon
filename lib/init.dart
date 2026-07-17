@@ -17,6 +17,7 @@ import 'package:venera/utils/app_links.dart';
 import 'package:venera/utils/handle_text_share.dart';
 import 'package:venera/utils/anime4k/anime4k_service.dart';
 import 'package:venera/utils/colorization/colorization_service.dart';
+import 'package:venera/utils/translation/translation_service.dart';
 import 'package:venera/utils/opencc.dart';
 import 'package:venera/utils/tags_translation.dart';
 import 'package:venera/utils/translations.dart';
