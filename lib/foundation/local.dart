@@ -426,6 +426,9 @@ class LocalManager with ChangeNotifier {
       cid = getChapterDirectoryName(cid);
       directory = Directory(FilePath.join(directory.path, cid));
     }
+    if (!(await directory.exists())) {
+      return [];
+    }
     var files = <File>[];
     await for (var entity in directory.list()) {
       if (entity is File) {

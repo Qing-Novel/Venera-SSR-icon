@@ -423,7 +423,7 @@ class ImagesDownloadTask extends DownloadTask with _TransferSpeedMixin {
     final forceOcr = appdata.settings['translationForceOcr'] == true;
     final hasChapters = comic?.chapters != null;
     final chapterKeys = hasChapters
-        ? comic!.chapters!.allChapters.keys.toList()
+        ? (chapters ?? comic!.chapters!.allChapters.keys.toList())
         : <String>[];
     unawaited(_enqueueTranslationAfterDownload(
       id: comicId,
@@ -935,8 +935,8 @@ Future<void> _enqueueTranslationAfterDownload({
     final lm = LocalManager();
     final pageUrls = <String>[];
     if (hasChapters) {
-      for (var i = 0; i < chapterKeys.length; i++) {
-        final urls = await lm.getImages(id, comicType, i + 1);
+      for (var chapterKey in chapterKeys) {
+        final urls = await lm.getImages(id, comicType, chapterKey);
         pageUrls.addAll(urls);
       }
     } else {
@@ -952,12 +952,16 @@ Future<void> _enqueueTranslationAfterDownload({
     for (final url in pageUrls) {
       final file =
           url.startsWith('file://') ? url.substring('file://'.length) : url;
-      if (await File(file).exists()) {
-        await TranslationService.instance.processFile(
-          filePath: file,
-          language: language,
-          forceOcr: forceOcr,
-        );
+      try {
+        if (await File(file).exists()) {
+          await TranslationService.instance.processFile(
+            filePath: file,
+            language: language,
+            forceOcr: forceOcr,
+          );
+        }
+      } catch (e) {
+        Log.error('Translation', 'failed to translate $file: $e');
       }
     }
     Log.info('Translation', 'batch translate done for $id');
