@@ -7,7 +7,7 @@ Black and white cartoon
 ocr translation.
 All running locally
 
-一个支持不同漫画源并且可以用anime4k进行本地超分的改版漫画阅读器
+一个支持不同漫画源，anime4k超分辨率，本地黑白漫画上色，本地ocr翻译的改版漫画阅读器
 
 ## Features
 
