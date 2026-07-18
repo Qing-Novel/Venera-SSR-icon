@@ -3,7 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:venera_ssr/utils/file_type.dart';
+import 'package:venera_ssr/utils/log.dart';
 import 'package:path/path.dart' as path;
 import 'package:venera/foundation/log.dart';
 
@@ -107,6 +108,23 @@ class TranslationService {
     String language,
     bool forceOcr,
   ) async {
+    // 检查图片格式是否受支持。
+    // 原生端的 TranslationPipeline 依赖文件名扩展名或特定的解码器路由，
+    // 对于不支持的格式（如 SVG）或无法识别的字节流，直接在 Dart 侧拦截以避免原生崩溃。
+    final fileType = detectFileType(imageBytes);
+    final mime = fileType.mime;
+    final isSupported = mime.startsWith('image/') &&
+        !mime.contains('svg') &&
+        !mime.contains('gif'); // 翻译流水线目前主要处理静态图
+
+    if (!isSupported) {
+      Log.warning(
+        'Translation',
+        'unsupported image format ($mime), skipping native translation',
+      );
+      return null;
+    }
+
     try {
       final result = await _channel.invokeMethod<Uint8List>('translateImage', {
         'imageBytes': imageBytes,

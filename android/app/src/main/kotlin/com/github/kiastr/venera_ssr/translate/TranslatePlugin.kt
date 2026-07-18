@@ -102,7 +102,8 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
         executor.execute {
             var inputFile: File? = null
             try {
-                inputFile = File(context.cacheDir, "translate_in_${System.currentTimeMillis()}.png")
+                val extension = detectImageExtension(imageBytes)
+                inputFile = File(context.cacheDir, "translate_in_${System.currentTimeMillis()}.$extension")
                 FileOutputStream(inputFile).use { it.write(imageBytes) }
                 val lang = TranslationLanguage.fromPref(languageName)
                 val translation = runBlocking {
@@ -180,5 +181,47 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
                 inputFile?.delete()
             }
         }
+    }
+
+    private fun detectImageExtension(bytes: ByteArray): String {
+        if (bytes.size < 12) return "png"
+        val b0 = bytes[0].toInt() and 0xFF
+        val b1 = bytes[1].toInt() and 0xFF
+        val b2 = bytes[2].toInt() and 0xFF
+        val b3 = bytes[3].toInt() and 0xFF
+
+        return when {
+            // JPEG: FF D8 FF
+            b0 == 0xFF && b1 == 0xD8 && b2 == 0xFF -> "jpg"
+            // PNG: 89 50 4E 47
+            b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47 -> "png"
+            // WebP: RIFF .... WEBP
+            b0 == 0x52 && b1 == 0x49 && b2 == 0x46 && b3 == 0x46 -> {
+                val b8 = bytes[8].toInt() and 0xFF
+                val b9 = bytes[9].toInt() and 0xFF
+                val b10 = bytes[10].toInt() and 0xFF
+                val b11 = bytes[11].toInt() and 0xFF
+                if (b8 == 0x57 && b9 == 0x45 && b10 == 0x42 && b11 == 0x50) "webp" else "png"
+            }
+            // AVIF: ....ftypavif
+            b4IsFtyp(bytes) && isAvifBrand(bytes) -> "avif"
+            // GIF: GIF8
+            b0 == 0x47 && b1 == 0x49 && b2 == 0x46 && b3 == 0x38 -> "gif"
+            // BMP: BM
+            b0 == 0x42 && b1 == 0x4D -> "bmp"
+            else -> "png"
+        }
+    }
+
+    private fun b4IsFtyp(bytes: ByteArray): Boolean {
+        if (bytes.size < 8) return false
+        return bytes[4].toInt() == 0x66 && bytes[5].toInt() == 0x74 &&
+                bytes[6].toInt() == 0x79 && bytes[7].toInt() == 0x70
+    }
+
+    private fun isAvifBrand(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        val brand = String(bytes, 8, 4)
+        return brand == "avif" || brand == "avis"
     }
 }
