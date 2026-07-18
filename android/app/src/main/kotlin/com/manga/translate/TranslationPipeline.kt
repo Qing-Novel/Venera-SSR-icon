@@ -25,10 +25,11 @@ internal class TranslationPipeline(
     private val bubbleTextRecognizer: BubbleTextRecognizer =
         BubbleTextRecognizer(llmClient, ocrEngineRegistry, settingsStore),
     private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator =
-        TextBubbleTranslationCoordinator(llmClient = llmClient),
+        TextBubbleTranslationCoordinator(llmClient = llmClient, localTranslationEngine = marianMtEngine),
     private val pageRegionDetector: PageRegionDetector =
         PageRegionDetector(context.applicationContext, settingsStore)
 ) {
+    private var marianMtEngine: MarianMtEngine? = null
     private val appContext = context.applicationContext
 
     suspend fun translateImage(
@@ -40,7 +41,7 @@ internal class TranslationPipeline(
         onProgress: (String) -> Unit
     ): TranslationResult? = withContext(Dispatchers.Default) {
         val resolvedApiSettings = providerContext?.apiSettings
-        if (!llmClient.isConfigured(resolvedApiSettings)) {
+        if (marianMtEngine?.isAvailable() != true && !llmClient.isConfigured(resolvedApiSettings)) {
             onProgress(appContext.getString(R.string.missing_api_settings))
             AppLogger.log("Pipeline", "Missing API settings")
             return@withContext null

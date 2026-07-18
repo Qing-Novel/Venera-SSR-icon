@@ -55,6 +55,9 @@ enum class JapaneseLocalOcrEngine(
 
     companion object {
         fun fromPref(value: String?): JapaneseLocalOcrEngine {
+        internal const val KEY_USE_LOCAL_TRANSLATION = "use_local_translation"
+        internal const val KEY_LOCAL_TRANSLATION_MODEL_DIR = "local_translation_model_dir"
+        internal const val DEFAULT_LOCAL_TRANSLATION_MODEL_DIR = ""
             return entries.firstOrNull { it.prefValue == value } ?: MANGA_OCR_MOBILE
         }
     }
@@ -371,6 +374,22 @@ class SettingsStore(context: Context) {
         return providerProfileStore.defaultAdditionalProviderName(index)
     }
 
+
+    fun loadUseLocalTranslation(): Boolean {
+        return storage.prefs.getBoolean(KEY_USE_LOCAL_TRANSLATION, false)
+    }
+
+    fun saveUseLocalTranslation(enabled: Boolean) {
+        storage.prefs.edit().putBoolean(KEY_USE_LOCAL_TRANSLATION, enabled).apply()
+    }
+
+    fun loadLocalTranslationModelDir(): String {
+        return storage.prefs.getString(KEY_LOCAL_TRANSLATION_MODEL_DIR, DEFAULT_LOCAL_TRANSLATION_MODEL_DIR) ?: DEFAULT_LOCAL_TRANSLATION_MODEL_DIR
+    }
+
+    fun saveLocalTranslationModelDir(dir: String) {
+        storage.prefs.edit().putString(KEY_LOCAL_TRANSLATION_MODEL_DIR, dir).apply()
+    }
     companion object {
         internal const val PREFS_NAME = "manga_translate_settings"
         internal const val AI_PROVIDER_PROFILES_FILE_NAME = "ai_provider_profiles.json"

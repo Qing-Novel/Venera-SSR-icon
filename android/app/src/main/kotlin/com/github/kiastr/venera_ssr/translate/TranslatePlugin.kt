@@ -86,6 +86,27 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
                     result.error("SAVE_FAILED", e.message ?: "save failed", null)
                 }
             }
+            "getLocalTranslationConfig" -> {
+                val s = SettingsStore(context)
+                val modelDirPath = s.loadLocalTranslationModelDir()
+                val modelDir = if (modelDirPath.isNotBlank()) File(modelDirPath) else null
+                val modelAvailable = modelDir != null && (
+                    File(modelDir, "model.onnx").exists() || File(modelDir, "encoder_model.onnx").exists()
+                ) && File(modelDir, "vocab.json").exists()
+                result.success(mapOf(
+                    "useLocalTranslation" to s.loadUseLocalTranslation(),
+                    "modelDir" to modelDirPath,
+                    "modelAvailable" to modelAvailable
+                ))
+            }
+            "setLocalTranslationConfig" -> {
+                val useLocal = call.argument<Boolean>("useLocalTranslation") ?: false
+                val modelDir = call.argument<String>("modelDir") ?: ""
+                val s = SettingsStore(context)
+                s.saveUseLocalTranslation(useLocal)
+                s.saveLocalTranslationModelDir(modelDir)
+                result.success(true)
+            }
             else -> result.notImplemented()
         }
     }

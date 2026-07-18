@@ -26,6 +26,9 @@ class _TranslationSettingsState extends State<TranslationSettings> {
   bool _llmConfigured = false;
   bool _loadingConfig = true;
   bool _saving = false;
+  bool _useLocalTranslation = false;
+  String _localModelDir = '';
+  bool _localModelAvailable = false;
 
   /// API 格式选项：界面显示 -> pref 值（传给原生 ApiFormat.fromPref）
   static const Map<String, String> _apiFormatOptions = {
@@ -55,6 +58,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
     super.initState();
     _refreshCacheSize();
     _loadLlmConfig();
+    _loadLocalConfig();
   }
 
   @override
@@ -87,6 +91,17 @@ class _TranslationSettingsState extends State<TranslationSettings> {
           _llmConfigured = cfg['configured'] == true;
         }
         _loadingConfig = false;
+      });
+    }
+  }
+
+  Future<void> _loadLocalConfig() async {
+    final localCfg = await TranslationService.instance.getLocalTranslationConfig();
+    if (mounted) {
+      setState(() {
+        _useLocalTranslation = localCfg['useLocalTranslation'] as bool? ?? false;
+        _localModelDir = localCfg['modelDir'] as String? ?? '';
+        _localModelAvailable = localCfg['modelAvailable'] as bool? ?? false;
       });
     }
   }

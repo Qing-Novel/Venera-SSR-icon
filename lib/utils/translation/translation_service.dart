@@ -268,6 +268,35 @@ class TranslationService {
     }
   }
 
+  /// 读取原生端保存的本地翻译配置（useLocalTranslation / modelDir / modelAvailable）。
+  Future<Map<String, dynamic>> getLocalTranslationConfig() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getLocalTranslationConfig');
+      return Map<String, dynamic>.from(res ?? {});
+    } catch (e, s) {
+      Log.error('Translation', 'getLocalTranslationConfig failed: $e\n$s');
+      return {};
+    }
+  }
+
+  /// 保存本地翻译配置到原生端。
+  Future<bool> setLocalTranslationConfig({
+    required bool useLocalTranslation,
+    required String modelDir,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<bool>('setLocalTranslationConfig', {
+        'useLocalTranslation': useLocalTranslation,
+        'modelDir': modelDir,
+      });
+      _negativeCache.clear();
+      return result ?? false;
+    } catch (e, s) {
+      Log.error('Translation', 'setLocalTranslationConfig failed: $e\n$s');
+      return false;
+    }
+  }
+
   /// 远程 LLM 是否已配置（apiUrl + apiKey + modelName 均非空）。
   Future<bool> isLlmConfigured() async {
     final cfg = await getLlmConfig();

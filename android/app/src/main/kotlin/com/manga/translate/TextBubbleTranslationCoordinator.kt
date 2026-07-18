@@ -1,7 +1,8 @@
 package com.manga.translate
 
 internal class TextBubbleTranslationCoordinator(
-    private val llmClient: LlmGateway
+    private val llmClient: LlmGateway,
+    private val localTranslationEngine: MarianMtEngine? = null
 ) {
 
     suspend fun translateBubbles(
@@ -25,6 +26,28 @@ internal class TextBubbleTranslationCoordinator(
         }
 
         val resolvedApiSettings = apiSettings
+        if (localTranslationEngine != null && localTranslationEngine.isAvailable()) {
+            val results = mutableListOf<BubbleTranslation>()
+            val removedIds = mutableSetOf<Int>()
+            for (bubble in translatable) {
+                val translated = localTranslationEngine.translate(bubble.sourceText, language)
+                if (translated.isBlank() || translated == bubble.sourceText) {
+                    removedIds.add(bubble.id)
+                } else {
+                    results.add(bubble.withTranslationResult(translated))
+                }
+            }
+            // 合并未翻译的（空白的）气泡
+            val finalBubbles = bubbles.map { bubble ->
+                results.find { it.id == bubble.id } ?: bubble
+            }.filterNot { it.id in removedIds }
+            
+            return TextBubbleTranslationBatchResult(
+                bubbles = finalBubbles,
+                glossaryUsed = emptyMap(),
+                removedBubbleIds = removedIds
+            )
+        }
         if (!llmClient.isConfigured(resolvedApiSettings)) {
             AppLogger.log(logTag, "Skip translate: LLM client not configured")
             return null
