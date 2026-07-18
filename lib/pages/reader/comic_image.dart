@@ -472,6 +472,9 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
           _translatedBytes = result;
           _isTranslating = false;
         });
+        // 翻译完成后，由于 ReaderImageProvider.load 已经能处理翻译逻辑，
+        // 这里通过重新解析图像流来确保整个阅读器组件链条感知到更新。
+        _resolveImage();
       } else {
         Log.warning('ComicImage', 'Translation: null result for ${provider.key}');
         _isTranslating = false;

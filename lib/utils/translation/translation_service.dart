@@ -7,6 +7,8 @@ import 'package:venera/utils/file_type.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:venera/foundation/log.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
 /// 漫画翻译服务（下载后批量 / 阅读时实时）
 ///
@@ -68,7 +70,8 @@ class TranslationService {
   /// 获取缓存文件路径
   String? _getCachePath(String key) {
     if (_cacheDir == null) return null;
-    return path.join(_cacheDir!, '${key.hashCode.abs()}.png');
+    final hash = md5.convert(utf8.encode(key)).toString();
+    return path.join(_cacheDir!, '$hash.png');
   }
 
   /// 检查是否有缓存，有则返回缓存数据

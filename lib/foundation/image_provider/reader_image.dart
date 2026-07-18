@@ -11,6 +11,7 @@ import 'reader_image.dart' as image_provider;
 import 'package:venera/foundation/appdata.dart';
 import 'package:venera/utils/anime4k/anime4k_service.dart';
 import 'package:venera/utils/colorization/colorization_service.dart';
+import 'package:venera/utils/translation/translation_service.dart';
 
 class ReaderImageProvider
     extends BaseImageProvider<image_provider.ReaderImageProvider> {
@@ -174,6 +175,31 @@ class ReaderImageProvider
         }
       } catch (e, s) {
         Log.error('ReaderImage', 'Colorization processing error: $e', s);
+      }
+    }
+
+    // ===== 漫画翻译处理 =====
+    final enableTranslation = appdata.settings.getReaderSetting(
+          cid, sourceKey ?? "", 'enableTranslation') ==
+        true;
+    if (enableTranslation) {
+      try {
+        final result = await TranslationService.instance.processImage(
+          imageBytes: bytes,
+          cacheKey: key,
+          language: (appdata.settings.getReaderSetting(
+                    cid, sourceKey ?? "", 'translationLanguage') as String?) ??
+              (appdata.settings['translationLanguage'] as String?) ??
+              'ja_to_zh',
+          forceOcr: appdata.settings.getReaderSetting(
+                cid, sourceKey ?? "", 'translationForceOcr') ==
+              true,
+        );
+        if (result != null) {
+          bytes = result;
+        }
+      } catch (e, s) {
+        Log.error('ReaderImage', 'Translation processing error: $e', s);
       }
     }
 
