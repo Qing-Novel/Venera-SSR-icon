@@ -55,9 +55,6 @@ enum class JapaneseLocalOcrEngine(
 
     companion object {
         fun fromPref(value: String?): JapaneseLocalOcrEngine {
-        internal const val KEY_USE_LOCAL_TRANSLATION = "use_local_translation"
-        internal const val KEY_LOCAL_TRANSLATION_MODEL_DIR = "local_translation_model_dir"
-        internal const val DEFAULT_LOCAL_TRANSLATION_MODEL_DIR = ""
             return entries.firstOrNull { it.prefValue == value } ?: MANGA_OCR_MOBILE
         }
     }
@@ -376,19 +373,19 @@ class SettingsStore(context: Context) {
 
 
     fun loadUseLocalTranslation(): Boolean {
-        return storage.prefs.getBoolean(KEY_USE_LOCAL_TRANSLATION, false)
+        return storage.prefs.getBoolean(SettingsStore.KEY_USE_LOCAL_TRANSLATION, false)
     }
 
     fun saveUseLocalTranslation(enabled: Boolean) {
-        storage.prefs.edit().putBoolean(KEY_USE_LOCAL_TRANSLATION, enabled).apply()
+        storage.prefs.edit().putBoolean(SettingsStore.KEY_USE_LOCAL_TRANSLATION, enabled).apply()
     }
 
     fun loadLocalTranslationModelDir(): String {
-        return storage.prefs.getString(KEY_LOCAL_TRANSLATION_MODEL_DIR, DEFAULT_LOCAL_TRANSLATION_MODEL_DIR) ?: DEFAULT_LOCAL_TRANSLATION_MODEL_DIR
+        return storage.prefs.getString(SettingsStore.KEY_LOCAL_TRANSLATION_MODEL_DIR, SettingsStore.DEFAULT_LOCAL_TRANSLATION_MODEL_DIR) ?: SettingsStore.DEFAULT_LOCAL_TRANSLATION_MODEL_DIR
     }
 
     fun saveLocalTranslationModelDir(dir: String) {
-        storage.prefs.edit().putString(KEY_LOCAL_TRANSLATION_MODEL_DIR, dir).apply()
+        storage.prefs.edit().putString(SettingsStore.KEY_LOCAL_TRANSLATION_MODEL_DIR, dir).apply()
     }
     companion object {
         internal const val PREFS_NAME = "manga_translate_settings"
@@ -398,6 +395,9 @@ class SettingsStore(context: Context) {
         internal const val KEY_MODEL_NAME = "model_name"
         internal const val KEY_API_FORMAT = "api_format"
         internal const val KEY_OCR_USE_LOCAL = "ocr_use_local"
+        internal const val KEY_USE_LOCAL_TRANSLATION = "use_local_translation"
+        internal const val KEY_LOCAL_TRANSLATION_MODEL_DIR = "local_translation_model_dir"
+        internal const val DEFAULT_LOCAL_TRANSLATION_MODEL_DIR = ""
         internal const val KEY_JAPANESE_LOCAL_OCR_ENGINE = "japanese_local_ocr_engine"
         internal const val KEY_OCR_API_URL = "ocr_api_url"
         internal const val KEY_OCR_API_KEY = "ocr_api_key"

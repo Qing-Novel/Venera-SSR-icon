@@ -24,12 +24,12 @@ internal class TranslationPipeline(
         OcrEngineRegistry(context.applicationContext, settingsStore),
     private val bubbleTextRecognizer: BubbleTextRecognizer =
         BubbleTextRecognizer(llmClient, ocrEngineRegistry, settingsStore),
-    private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator =
-        TextBubbleTranslationCoordinator(llmClient = llmClient, localTranslationEngine = marianMtEngine),
     private val pageRegionDetector: PageRegionDetector =
-        PageRegionDetector(context.applicationContext, settingsStore)
+        PageRegionDetector(context.applicationContext, settingsStore),
+    private val marianMtEngine: MarianMtEngine? = null,
+    private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator =
+        TextBubbleTranslationCoordinator(llmClient = llmClient, localTranslationEngine = marianMtEngine)
 ) {
-    private var marianMtEngine: MarianMtEngine? = null
     private val appContext = context.applicationContext
 
     suspend fun translateImage(
