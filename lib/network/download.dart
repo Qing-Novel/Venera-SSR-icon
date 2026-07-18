@@ -953,12 +953,24 @@ Future<void> _enqueueTranslationAfterDownload({
       final file =
           url.startsWith('file://') ? url.substring('file://'.length) : url;
       try {
-        if (await File(file).exists()) {
-          await TranslationService.instance.processFile(
+        final originalFile = File(file);
+        if (await originalFile.exists()) {
+          final result = await TranslationService.instance.processFile(
             filePath: file,
             language: language,
             forceOcr: forceOcr,
           );
+          if (result != null) {
+            final parentDir = originalFile.parent;
+            final translatedDir = Directory(FilePath.join(parentDir.path, 'translated'));
+            if (!await translatedDir.exists()) {
+              await translatedDir.create(recursive: true);
+            }
+            final fileName = originalFile.name;
+            final translatedFile = File(FilePath.join(translatedDir.path, fileName));
+            await translatedFile.writeAsBytes(result);
+            Log.info('Translation', 'translated image saved to ${translatedFile.path}');
+          }
         }
       } catch (e) {
         Log.error('Translation', 'failed to translate $file: $e');
