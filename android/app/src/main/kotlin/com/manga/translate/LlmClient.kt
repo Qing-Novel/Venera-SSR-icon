@@ -119,7 +119,7 @@ class LlmClient(
         glossary: Map<String, String>,
         promptAsset: String
     ): Map<String, String>? = withContext(Dispatchers.IO) {
-        if ((apiSettings ?: settingsStore.load()).apiFormat == ApiFormat.GOOGLE_PUBLIC) {
+        if (settingsStore.load().apiFormat == ApiFormat.GOOGLE_PUBLIC) {
             return@withContext emptyMap()
         }
         requestContent(text, glossary, promptAsset, useJsonPayload = true)

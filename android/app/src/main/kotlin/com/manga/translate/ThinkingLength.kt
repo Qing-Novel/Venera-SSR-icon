@@ -46,6 +46,7 @@ enum class ThinkingLength(
                 ApiFormat.GEMINI -> entries.toList()
                 ApiFormat.OPENAI_COMPATIBLE,
                 ApiFormat.OPENAI_RESPONSES -> entries.filter { it != AUTO }
+                ApiFormat.GOOGLE_PUBLIC -> emptyList()
             }
         }
 
