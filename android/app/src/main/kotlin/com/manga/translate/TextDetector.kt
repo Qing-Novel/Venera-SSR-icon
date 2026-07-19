@@ -17,7 +17,7 @@ import kotlin.math.min
  *
  * 移植自 jedzqer/manga-translator-android（MIT）。上游使用独立的
  * `yolo11n-text.onnx`（YOLO 输出 cx/cy/w/h + 类别分）做自由文本检测，
- * 与气泡检测器 [BubbleDetector]（yolov8m_seg）是两个不同模型。
+ * 与气泡检测器 [BubbleDetector]（manga109）是两个不同模型。
  *
  * 推理时把 [suppressionRects]（气泡框，外扩后）以白色涂到 letterbox 画布上，
  * 使模型在气泡内部不输出文字框；最终输出再整体外扩 [FreeTextOutputExpand*]，

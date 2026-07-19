@@ -28,16 +28,21 @@ data class UnifiedRegionDetection(
 )
 
 /**
- * Ultralytics YOLO-seg speech-bubble detector (yolov8m_seg-speech-bubble.onnx).
+ * Ultralytics YOLO-seg speech-bubble detector.
  *
- * The exported model has one class (`balloon`) and emits the normal Ultralytics
- * segmentation head: [1, 37, N] (`xywh`, confidence, 32 mask coefficients)
- * plus [1, 32, H, W] mask prototypes. The detection boxes and confidence
- * are already decoded by the ONNX graph; only NMS and mask reconstruction remain.
+ * The bundled model is the upstream `manga109-segmentation-bubble.onnx`
+ * (YOLO11n-seg, trained on the Manga109 corpus). It has one class (`balloon`)
+ * and emits the normal Ultralytics segmentation head: [1, 37, N]
+ * (`xywh`, confidence, 32 mask coefficients) plus [1, 32, H, W] mask
+ * prototypes. The detection boxes and confidence are already decoded by the
+ * ONNX graph; only NMS and mask reconstruction remain.
  *
- * The graph uses `tensor(float16)` I/O, so the input tensor is packed as
- * FLOAT16 and the outputs are unpacked from FLOAT16 to float32 before parsing.
- * A float32 input is rejected by ONNXRuntime and produces zero balloons.
+ * The previous Venera model (`yolov8m_seg-speech-bubble.onnx`) used
+ * `tensor(float16)` I/O; the upstream `manga109` export uses `tensor(float32)`.
+ * The loader reads the graph's declared input precision and matches it, so both
+ * exports work without changing call sites. Outputs are unpacked from FLOAT16
+ * to float32 when needed (the speech-bubble model may emit half precision),
+ * falling back to native float32 otherwise.
  *
  * Parsing restored to the upstream (jedzqer) channels-first mask-prototype format.
  * Venera had rewritten this to an end2end multi-class format that the real model
@@ -54,11 +59,14 @@ class BubbleDetector(
     private val session: OrtSession = createSession()
     private val inputName: String
     private val inputShape: LongArray
+    private val inputType: OnnxJavaType
 
     init {
         val input = session.inputInfo.entries.first()
         inputName = input.key
-        inputShape = (input.value.info as TensorInfo).shape
+        val tensorInfo = input.value.info as TensorInfo
+        inputShape = tensorInfo.shape
+        inputType = tensorInfo.type
     }
 
     @Synchronized
@@ -77,7 +85,7 @@ class BubbleDetector(
         val inputBuffer = OnnxImagePreprocessor.bitmapToRgbChwFloat(preprocessed.bitmap)
         preprocessed.bitmap.recycle()
 
-        val inputTensor = createFloat16Tensor(
+        val inputTensor = createInputTensor(
             inputBuffer,
             longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong())
         )
@@ -420,10 +428,26 @@ class BubbleDetector(
     private fun formatConfidence(value: Float): String = "%.3f".format(value)
 
     /**
-     * Build a FLOAT16 input tensor. The real `yolov8m_seg-speech-bubble.onnx`
-     * graph was exported with `tensor(float16)` I/O, so a float32 input is
-     * rejected by ONNXRuntime and yields zero detections. We pack each float
-     * into 2 bytes in little-endian order to match the compiled graph.
+     * Build the input tensor using the precision the model graph declares.
+     * The previous `yolov8m_seg-speech-bubble.onnx` export used
+     * `tensor(float16)` I/O, while the upstream `manga109-segmentation-bubble.onnx`
+     * (YOLO11n-seg) export uses `tensor(float32)`. Feeding the wrong precision
+     * makes ONNXRuntime reject the input (or return zero detections), so we
+     * read `inputType` from the loaded graph and match it.
+     */
+    private fun createInputTensor(data: FloatArray, shape: LongArray): OnnxTensor {
+        return if (inputType == OnnxJavaType.FLOAT16) {
+            createFloat16Tensor(data, shape)
+        } else {
+            OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape)
+        }
+    }
+
+    /**
+     * Build a FLOAT16 input tensor (used when the model graph declares
+     * `tensor(float16)` I/O). A float32 input would be rejected by
+     * ONNXRuntime and yield zero detections, so each float is packed into
+     * 2 bytes in little-endian order to match the compiled graph.
      */
     private fun createFloat16Tensor(data: FloatArray, shape: LongArray): OnnxTensor {
         val buf = ByteBuffer.allocateDirect(data.size * 2).order(ByteOrder.LITTLE_ENDIAN)
@@ -479,19 +503,23 @@ class BubbleDetector(
     }
 
     companion object {
-        // The model actually bundled in jedzqer's v3.x release is
-        // yolov8m_seg-speech-bubble.onnx (float16 YOLO-seg, single class).
-        // The README's "manga109-segmentation-bubble.onnx" name is stale and
-        // the file was never shipped, so the legacy names remain as fallbacks.
-        const val DEFAULT_MODEL_ASSET = "models/detection/yolov8m_seg-speech-bubble.onnx"
-        private const val LEGACY_MODEL_ASSET = "models/detection/manga109-segmentation-bubble.onnx"
+        // Venera now bundles the upstream Manga109 speech-bubble detector
+        // (YOLO11n-seg, float32 I/O, native 1600x1600 input, single class).
+        // It is ~4.4x smaller than the previous yolov8m_seg model while being
+        // trained on the Manga109 corpus, giving better cost-performance for
+        // manga translation.
+        const val DEFAULT_MODEL_ASSET = "models/detection/manga109-segmentation-bubble.onnx"
+        // Previous Venera model, kept as a fallback for existing setups.
+        private const val LEGACY_MODEL_ASSET = "models/detection/yolov8m_seg-speech-bubble.onnx"
         private const val LEGACY_MODEL_ASSET_2 = "models/detection/manga109-seg.onnx"
         const val CLASS_BALLOON = 0
         // Kept for the shared confidence helper and existing unit tests. The
         // segmentation model itself only emits CLASS_BALLOON.
         const val CLASS_TEXT = 1
-        // The model was trained around 960-1024; 1600 yields zero detections
-        // and 512 under-detects. 1024 is the verified sweet spot.
+        // The input size is read from the model graph, so this is only a
+        // fallback when the graph omits it. The upstream manga109 model
+        // declares a native 1600x1600 input; the previous yolov8m model
+        // preferred 1024.
         private const val DEFAULT_INPUT_SIZE = 1024
         private const val MASK_COEFFICIENT_COUNT = 32
         private const val MASK_THRESHOLD = 0.5f
