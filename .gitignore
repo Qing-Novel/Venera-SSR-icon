@@ -47,3 +47,7 @@ add_translation.py
 
 */*/generated_*
 */*/Generated*
+
+# Sandbox-only int8 model — do NOT commit (fp32 model.onnx is tracked via LFS)
+translation_models/**/model.int8.onnx
+*.int8.onnx

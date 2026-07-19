@@ -93,6 +93,7 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
                 val modelAvailable = modelDir != null && (
                     File(modelDir, "model.onnx").exists() || File(modelDir, "encoder_model.onnx").exists()
                 ) && File(modelDir, "vocab.json").exists()
+                    && File(modelDir, "source.spm").exists()
                 result.success(mapOf(
                     "useLocalTranslation" to s.loadUseLocalTranslation(),
                     "modelDir" to modelDirPath,
