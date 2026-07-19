@@ -315,6 +315,7 @@ internal class PageRegionDetector(
 ) {
     private val appContext = context.applicationContext
     private var bubbleDetector: BubbleDetector? = null
+    private var textDetector: TextDetector? = null
 
     suspend fun detect(
         bitmap: Bitmap,
@@ -564,13 +565,75 @@ internal class PageRegionDetector(
         val detector = getBubbleDetector(logTag) ?: return null
         return try {
             val raw = detector.detectRegions(bitmap)
+            val balloons = filterTinyBubbleDetections(raw.balloons, bitmap, logTag)
+            // 自由文本检测（气泡外的招牌 / 章节标题 / 拟声词）：用气泡框（外扩）作抑制区，
+            // 避免把气泡内的文字重复检测。模型缺失时 getTextDetector 返回 null，自由文本检测
+            // 优雅降级为空（气泡检测照常）。
+            val freeTextRects = getTextDetector(logTag)?.let { textDetector ->
+                try {
+                    textDetector.detect(
+                        bitmap = bitmap,
+                        suppressionRects = buildTextSuppressionRects(balloons, bitmap)
+                    )
+                } catch (e: Exception) {
+                    AppLogger.log(logTag, "Supplement text detection failed; keeping bubbles", e)
+                    emptyList()
+                }
+            }.orEmpty()
             UnifiedRegionDetection(
-                balloons = filterTinyBubbleDetections(raw.balloons, bitmap, logTag),
-                freeTextRects = raw.freeTextRects
+                balloons = balloons,
+                freeTextRects = freeTextRects
             )
         } catch (e: Exception) {
             AppLogger.log(logTag, "Unified region detection failed", e)
             null
+        }
+    }
+
+    /**
+     * 懒加载自由文本检测器。模型文件 [TextDetector.DEFAULT_MODEL_ASSET] 可能未随构建打包
+     * （需通过下载框架获取），缺失时直接返回 null，不抛异常、不影响气泡检测。
+     */
+    private fun getTextDetector(logTag: String): TextDetector? {
+        if (textDetector != null) return textDetector
+        val assetFileName = TextDetector.DEFAULT_MODEL_ASSET.substringAfterLast('/')
+        val assetPresent = runCatching {
+            appContext.assets.list("models/detection")?.contains(assetFileName) == true
+        }.getOrNull() ?: false
+        if (!assetPresent) {
+            AppLogger.log(logTag, "TextDetector model ($assetFileName) not found; skipping free-text detection")
+            return null
+        }
+        return try {
+            AppLogger.log(logTag, "Loading TextDetector (${TextDetector.DEFAULT_MODEL_ASSET})")
+            textDetector = TextDetector(appContext, settingsStore = settingsStore)
+            AppLogger.log(logTag, "TextDetector ready")
+            textDetector
+        } catch (e: Exception) {
+            AppLogger.log(logTag, "Failed to init text detector", e)
+            null
+        } catch (e: Error) {
+            AppLogger.logFatal(logTag, "Fatal error init text detector", e)
+            null
+        }
+    }
+
+    private fun buildTextSuppressionRects(
+        detections: List<BubbleDetection>,
+        bitmap: Bitmap
+    ): List<RectF> {
+        return detections.map { detection ->
+            val rect = detection.rect
+            val pad = max(
+                TranslationCoreDefaults.PageRegionMaskExpandMin,
+                max(1f, rect.height()) * TranslationCoreDefaults.PageRegionMaskExpandRatio
+            )
+            RectF(
+                (rect.left - pad).coerceIn(0f, bitmap.width.toFloat()),
+                (rect.top - pad).coerceIn(0f, bitmap.height.toFloat()),
+                (rect.right + pad).coerceIn(0f, bitmap.width.toFloat()),
+                (rect.bottom + pad).coerceIn(0f, bitmap.height.toFloat())
+            )
         }
     }
 

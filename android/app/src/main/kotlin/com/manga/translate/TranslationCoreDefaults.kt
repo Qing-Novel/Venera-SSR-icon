@@ -9,8 +9,14 @@ object TranslationCoreDefaults {
     // bubble into multiple boxes. 0.5 matches upstream and keeps one box per bubble.
     const val BubbleDetectorNmsIouThreshold = 0.5f
     const val MinBalloonConfidence = 0.15f
+    const val TextDetectorConfThreshold = 0.4f
+    const val TextDetectorNmsIouThreshold = 0.5f
     const val FreeTextOutputExpandRatio = 0.08f
     const val FreeTextOutputExpandMin = 1.0f
+    // 自由文本检测（TextDetector）对气泡框做抑制时的外扩，避免把气泡边缘的
+    // 截断残影/尾巴误判为独立文字。与上游 jedzqer 对齐。
+    const val PageRegionMaskExpandRatio = 0.15f
+    const val PageRegionMaskExpandMin = 4f
 
     const val PageRegionTextIouThreshold = 0.2f
     const val TinyBubbleShortSideMinPx = 12f

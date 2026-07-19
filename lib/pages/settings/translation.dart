@@ -1,5 +1,7 @@
 part of 'settings_page.dart';
 
+import 'package:venera/pages/settings/translation_model_management.dart';
+
 /// 漫画翻译设置页
 ///
 /// 提供「下载后自动翻译」（批量后台）与「阅读时实时翻译」开关、目标语言、
@@ -203,6 +205,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
                           hint: _apiFormat == 'gemini'
                               ? "https://generativelanguage.googleapis.com"
                               : "https://api.openai.com/v1",
+                          enabled: _apiFormat != 'google_public',
                         ),
                         const SizedBox(height: 12),
                         _buildTextField(
@@ -210,6 +213,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
                           label: "API Key".tl,
                           hint: "sk-...",
                           obscure: true,
+                          enabled: _apiFormat != 'google_public',
                         ),
                         const SizedBox(height: 12),
                         _buildTextField(
@@ -218,6 +222,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
                           hint: _apiFormat == 'gemini'
                               ? "gemini-2.0-flash"
                               : "gpt-4o-mini",
+                          enabled: _apiFormat != 'google_public',
                         ),
                         const SizedBox(height: 12),
                         Text("API Format".tl,
@@ -232,11 +237,30 @@ class _TranslationSettingsState extends State<TranslationSettings> {
                               label: Text(e.key.tl),
                               selected: selected,
                               onSelected: (_) {
-                                setState(() => _apiFormat = e.value);
+                                setState(() {
+                                  _apiFormat = e.value;
+                                  // 切到谷歌公共翻译(免Key)时清空其他格式残留的地址/密钥/模型，
+                                  // 避免保存后这些字段继续生效导致翻译失败（与原生 setLlmConfig 兜底一致）
+                                  if (_apiFormat == 'google_public') {
+                                    _apiUrlController.clear();
+                                    _apiKeyController.clear();
+                                    _modelNameController.clear();
+                                  }
+                                });
                               },
                             );
                           }).toList(),
                         ),
+                        if (_apiFormat == 'google_public') ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            "Google public translate needs no API config".tl,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.colorScheme.primary,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
@@ -349,6 +373,34 @@ class _TranslationSettingsState extends State<TranslationSettings> {
             ),
           ),
         ),
+        // ===== 模型管理（按需下载，参考上色功能）=====
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              "Translation Models".tl,
+              style: TextStyle(
+                color: context.colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              "Download translation models on demand to reduce APK size.".tl,
+              style: TextStyle(
+                fontSize: 12,
+                color: context.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(
+          child: TranslationModelManagement(),
+        ),
         // ===== 开关 =====
         _SwitchSetting(
           title: "Translate after download".tl,
@@ -356,11 +408,47 @@ class _TranslationSettingsState extends State<TranslationSettings> {
               .tl,
           settingKey: "translateAfterDownload",
         ).toSliver(),
-        _SwitchSetting(
-          title: "Translate in reader".tl,
-          subtitle: "Translate visible pages in real time while reading".tl,
-          settingKey: "enableTranslation",
-        ).toSliver(),
+        // 阅读时翻译：实验性功能，单页翻译约 30 秒，体验较差，需显式提示
+        SliverToBoxAdapter(
+          child: ListTile(
+            title: Row(
+              children: [
+                Text("Translate in reader".tl),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    "实验性".tl,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            subtitle: Text(
+              "Translate visible pages in real time while reading (Experimental: ~30s per page)"
+                  .tl,
+            ),
+            trailing: Switch(
+              value: appdata.settings['enableTranslation'] as bool? ?? false,
+              onChanged: (v) {
+                appdata.settings['enableTranslation'] = v;
+                appdata.saveData();
+                setState(() {});
+              },
+            ),
+          ),
+        ),
         // 目标语言选择
         SliverToBoxAdapter(
           child: Padding(
@@ -424,13 +512,15 @@ class _TranslationSettingsState extends State<TranslationSettings> {
     required String label,
     String? hint,
     bool obscure = false,
+    bool enabled = true,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      enabled: enabled,
       decoration: InputDecoration(
         labelText: label,
-        hintText: hint,
+        hintText: enabled ? hint : null,
         border: const OutlineInputBorder(),
         isDense: true,
       ),

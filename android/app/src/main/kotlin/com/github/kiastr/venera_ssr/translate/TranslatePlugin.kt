@@ -72,12 +72,21 @@ class TranslatePlugin(private val context: Context) : MethodChannel.MethodCallHa
                 val apiKey = call.argument<String>("apiKey") ?: ""
                 val modelName = call.argument<String>("modelName") ?: ""
                 val apiFormat = ApiFormat.fromPref(call.argument<String>("apiFormat"))
+                // 谷歌公共翻译(免Key)走默认公开端点，不需要 apiUrl/apiKey/modelName。
+                // 若沿用其他格式残留的配置（如硅基流动地址、千问模型名），requestGooglePublic
+                // 会把这些值当作端点前缀，导致请求打错地址而翻译失败。这里在保存时清空，
+                // 保证落到 GOOGLE_PUBLIC_ENDPOINT 默认端点（requestGooglePublic 对空 apiUrl 回退）。
+                val (finalUrl, finalKey, finalModel) = if (apiFormat == ApiFormat.GOOGLE_PUBLIC) {
+                    Triple("", "", "")
+                } else {
+                    Triple(apiUrl, apiKey, modelName)
+                }
                 try {
                     SettingsStore(context).save(
                         ApiSettings(
-                            apiUrl = apiUrl,
-                            apiKey = apiKey,
-                            modelName = modelName,
+                            apiUrl = finalUrl,
+                            apiKey = finalKey,
+                            modelName = finalModel,
                             apiFormat = apiFormat
                         )
                     )
