@@ -27,12 +27,19 @@ internal class TranslationPipeline(
     private val pageRegionDetector: PageRegionDetector =
         PageRegionDetector(context.applicationContext, settingsStore),
     private var marianMtEngine: MarianMtEngine? = null,
-    private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator =
-        TextBubbleTranslationCoordinator(llmClient = llmClient, localTranslationEngine = marianMtEngine)
+    private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator
 ) {
     private val appContext = context.applicationContext
     init {
         initMarianMtEngine()
+        // Construct the coordinator AFTER marianMtEngine is initialised, otherwise
+        // it captures the still-null field and the local (MarianMT) engine is
+        // never used — every translation would wrongly fall through to the LLM
+        // branch (which then fails on the missing prompts/llm_prompts.json asset).
+        textBubbleTranslationCoordinator = TextBubbleTranslationCoordinator(
+            llmClient = llmClient,
+            localTranslationEngine = marianMtEngine
+        )
     }
 
     private fun initMarianMtEngine() {
