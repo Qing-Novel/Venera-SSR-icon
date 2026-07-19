@@ -26,10 +26,14 @@ internal class TranslationPipeline(
         BubbleTextRecognizer(llmClient, ocrEngineRegistry, settingsStore),
     private val pageRegionDetector: PageRegionDetector =
         PageRegionDetector(context.applicationContext, settingsStore),
-    private var marianMtEngine: MarianMtEngine? = null,
-    private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator
+    private var marianMtEngine: MarianMtEngine? = null
 ) {
     private val appContext = context.applicationContext
+    // Must be assigned inside init AFTER initMarianMtEngine(), otherwise it captures the
+    // still-null marianMtEngine field and the local (MarianMT) engine is never used — every
+    // translation would wrongly fall through to the LLM branch (which then fails on the
+    // missing prompts/llm_prompts.json asset).
+    private lateinit var textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator
     init {
         initMarianMtEngine()
         // Construct the coordinator AFTER marianMtEngine is initialised, otherwise
