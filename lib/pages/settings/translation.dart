@@ -35,6 +35,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
     "OpenAI Compatible": "openai_compatible",
     "OpenAI Responses": "openai_responses",
     "Gemini": "gemini",
+    "谷歌公共翻译(免Key)": "google_public",
   };
 
   /// 语言选项：label（界面显示） -> pref 值（传给原生 TranslationLanguage.fromPref）

@@ -9,7 +9,8 @@ enum class ApiFormat(
 ) {
     OPENAI_COMPATIBLE("openai_compatible", R.string.api_format_openai_compatible),
     OPENAI_RESPONSES("openai_responses", R.string.api_format_openai_responses),
-    GEMINI("gemini", R.string.api_format_gemini);
+    GEMINI("gemini", R.string.api_format_gemini),
+    GOOGLE_PUBLIC("google_public", R.string.api_format_google_public);
 
     companion object {
         fun fromPref(value: String?): ApiFormat {

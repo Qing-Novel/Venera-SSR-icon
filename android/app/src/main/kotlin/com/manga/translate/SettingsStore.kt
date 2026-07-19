@@ -16,7 +16,11 @@ data class ApiSettings(
     val providerId: String = PRIMARY_PROVIDER_ID
 ) {
     fun isValid(): Boolean {
-        return apiUrl.isNotBlank() && apiKey.isNotBlank() && modelName.isNotBlank()
+        return when (apiFormat) {
+            // 谷歌公共翻译走免 Key 公开端点，apiUrl 可空（留空用默认端点）
+            ApiFormat.GOOGLE_PUBLIC -> true
+            else -> apiUrl.isNotBlank() && apiKey.isNotBlank() && modelName.isNotBlank()
+        }
     }
 }
 

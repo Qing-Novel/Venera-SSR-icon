@@ -36,6 +36,10 @@ class LlmClient(
     private val promptCache = ConcurrentHashMap<String, LlmPromptConfig>()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val formUrlEncodedMediaType = "application/x-www-form-urlencoded".toMediaType()
+    // 谷歌公共翻译免 Key 端点（用户可在设置里覆盖 apiUrl 指向镜像）
+    private val GOOGLE_PUBLIC_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+    // 免 Key 公开接口默认目标语言（App 主要场景是翻成中文）
+    private val GOOGLE_PUBLIC_TARGET = "zh-CN"
     private val baseHttpClient = OkHttpClient()
     private val httpClientCache = object : LinkedHashMap<Int, OkHttpClient>(MAX_CACHED_HTTP_CLIENTS, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, OkHttpClient>?): Boolean {
@@ -60,6 +64,11 @@ class LlmClient(
         apiSettings: ApiSettings? = null
     ): LlmTranslationResult? =
         withContext(Dispatchers.IO) {
+            val settings = apiSettings ?: settingsStore.load()
+            if (settings.apiFormat == ApiFormat.GOOGLE_PUBLIC) {
+                val translated = requestGooglePublic(text, settings) ?: return@withContext null
+                return@withContext LlmTranslationResult(translated, emptyMap())
+            }
             val content = requestContent(
                 text = text,
                 glossary = glossary,
@@ -71,7 +80,7 @@ class LlmClient(
             )
                 ?: return@withContext null
             parseTranslationContent(content)
-    }
+        }
 
     override suspend fun translateBubbleItems(
         items: List<LlmBubbleTranslationRequestItem>,
@@ -82,6 +91,15 @@ class LlmClient(
         apiSettings: ApiSettings?
     ): LlmBubbleTranslationResult? =
         withContext(Dispatchers.IO) {
+            val settings = apiSettings ?: settingsStore.load()
+            if (settings.apiFormat == ApiFormat.GOOGLE_PUBLIC) {
+                // 公共翻译是纯文本 MT，逐条翻译再组装（不支持批量 JSON / 词汇表）
+                val translatedItems = items.map { item ->
+                    val t = runCatching { requestGooglePublic(item.text, settings) }.getOrNull().orEmpty()
+                    LlmBubbleTranslationItem(item.id, t)
+                }
+                return@withContext LlmBubbleTranslationResult(translatedItems, emptyMap())
+            }
             val content = requestContent(
                 text = "",
                 glossary = glossary,
@@ -101,6 +119,9 @@ class LlmClient(
         glossary: Map<String, String>,
         promptAsset: String
     ): Map<String, String>? = withContext(Dispatchers.IO) {
+        if ((apiSettings ?: settingsStore.load()).apiFormat == ApiFormat.GOOGLE_PUBLIC) {
+            return@withContext emptyMap()
+        }
         requestContent(text, glossary, promptAsset, useJsonPayload = true)
             ?.let { parseGlossaryContent(it) }
     }
@@ -522,6 +543,82 @@ class LlmClient(
         return null
     }
 
+    private suspend fun requestGooglePublic(text: String, settings: ApiSettings): String? {
+        if (text.isBlank()) return ""
+        val base = settings.apiUrl.ifBlank { GOOGLE_PUBLIC_ENDPOINT }
+        val url = buildString {
+            append(base)
+            append(if (base.contains('?')) '&' else '?')
+            append("client=gtx&sl=auto&tl=")
+            append(URLEncoder.encode(GOOGLE_PUBLIC_TARGET, "UTF-8"))
+            append("&dt=t&q=")
+            append(URLEncoder.encode(text, "UTF-8"))
+        }
+        val timeoutMs = settingsStore.loadApiTimeoutMs()
+        var lastError: String? = null
+        for (attempt in 1..RETRY_COUNT) {
+            currentCoroutineContext().ensureActive()
+            try {
+                val request = Request.Builder().url(url).get().build()
+                val result = executeRequest(request, timeoutMs).use { response ->
+                    val code = response.code
+                    val body = response.body?.string().orEmpty()
+                    if (code !in 200..299) {
+                        lastError = "HTTP $code"
+                        return@use null
+                    }
+                    parseGooglePublicContent(body)
+                }
+                if (result != null) return result
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppLogger.log("LlmClient", "Google public translate failed (attempt $attempt)", e)
+                lastError = "NETWORK_ERROR"
+            }
+            if (attempt < RETRY_COUNT) delay(800L * attempt)
+        }
+        AppLogger.log("LlmClient", "Google public translate failed: $lastError")
+        return null
+    }
+
+    private fun parseGooglePublicContent(body: String): String? {
+        // 主格式（谷歌公开端点）：嵌套数组 [[["译文","原文",...],...],"src",...]
+        try {
+            val root = JSONArray(body)
+            val segs = root.optJSONArray(0) ?: return null
+            val parts = mutableListOf<String>()
+            for (i in 0 until segs.length()) {
+                val seg = segs.optJSONArray(i) ?: continue
+                val t = seg.optString(0).trim()
+                if (t.isNotBlank()) parts.add(t)
+            }
+            val joined = parts.joinToString("")
+            if (joined.isNotBlank()) return joined
+        } catch (e: Exception) {
+            AppLogger.log("LlmClient", "Google public nested-array parse failed, try sentences form", e)
+        }
+        // 兜底格式：{"sentences":[{"trans":"..."}]} 或 ["译文",...]
+        return try {
+            val json = JSONObject(body)
+            val sentences = json.optJSONArray("sentences") ?: return null
+            val parts = mutableListOf<String>()
+            for (i in 0 until sentences.length()) {
+                when (val item = sentences.opt(i)) {
+                    is String -> if (item.isNotBlank()) parts.add(item.trim())
+                    is JSONObject -> {
+                        val t = item.optString("trans").trim()
+                        if (t.isNotBlank()) parts.add(t)
+                    }
+                }
+            }
+            parts.joinToString("").ifBlank { null }
+        } catch (e: Exception) {
+            AppLogger.log("LlmClient", "Failed to parse Google public response", e)
+            null
+        }
+    }
+
     private suspend fun requestImageContent(
         imageBase64: String,
         promptAsset: String,
@@ -637,6 +734,7 @@ class LlmClient(
             ApiFormat.OPENAI_COMPATIBLE -> buildOpenAiEndpoint(settings.apiUrl)
             ApiFormat.OPENAI_RESPONSES -> buildOpenAiResponsesEndpoint(settings.apiUrl)
             ApiFormat.GEMINI -> buildGeminiGenerateEndpoint(settings.apiUrl, modelName, settings.apiKey)
+            ApiFormat.GOOGLE_PUBLIC -> settings.apiUrl.ifBlank { GOOGLE_PUBLIC_ENDPOINT }
         }
     }
 
@@ -702,6 +800,7 @@ class LlmClient(
                 config = config,
                 userPayload = userPayload
             )
+            ApiFormat.GOOGLE_PUBLIC -> JSONObject()
         }
     }
 
@@ -805,6 +904,7 @@ class LlmClient(
             ApiFormat.OPENAI_COMPATIBLE -> parseOpenAiResponseContent(body)
             ApiFormat.OPENAI_RESPONSES -> parseOpenAiResponsesContent(body)
             ApiFormat.GEMINI -> parseGeminiResponseContent(body)
+            ApiFormat.GOOGLE_PUBLIC -> parseGooglePublicContent(body)
         }
     }
 
@@ -980,6 +1080,7 @@ class LlmClient(
                 promptAsset = promptAsset
             )
             ApiFormat.GEMINI -> buildGeminiImageTranslationPayload(imageBase64, promptAsset)
+            ApiFormat.GOOGLE_PUBLIC -> JSONObject()
         }
     }
 
@@ -1471,6 +1572,7 @@ class LlmClient(
             ApiFormat.OPENAI_COMPATIBLE,
             ApiFormat.OPENAI_RESPONSES -> buildOpenAiModelsEndpoint(apiUrl)
             ApiFormat.GEMINI -> buildGeminiModelsEndpoint(apiUrl, apiKey)
+            ApiFormat.GOOGLE_PUBLIC -> apiUrl.ifBlank { GOOGLE_PUBLIC_ENDPOINT }
         }
         val timeoutMs = settingsStore.loadApiTimeoutMs()
         var lastErrorCode: String? = null
@@ -1620,6 +1722,7 @@ class LlmClient(
             ApiFormat.OPENAI_COMPATIBLE,
             ApiFormat.OPENAI_RESPONSES -> parseOpenAiModelList(body)
             ApiFormat.GEMINI -> parseGeminiModelList(body)
+            ApiFormat.GOOGLE_PUBLIC -> emptyList()
         }
     }
 
@@ -1953,6 +2056,7 @@ class LlmClient(
                     "systemInstruction",
                     "generationConfig"
                 )
+                ApiFormat.GOOGLE_PUBLIC -> emptySet()
             }
         }
     }

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="api_format_gemini">Gemini</string>
+    <string name="api_format_google_public">谷歌公共翻譯(免Key)</string>
     <string name="api_format_openai_compatible">OpenAI 相容</string>
     <string name="api_format_openai_responses">OpenAI Responses</string>
     <string name="bubble_font_custom_file">自訂字型檔案</string>
