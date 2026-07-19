@@ -6,14 +6,14 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:venera/foundation/log.dart';
 
-/// 翻译模型管理器：参照 [ColorizationModelManager] 的下载框架，支持按需下载翻译相关模型
-/// （气泡检测 / 文本检测 / OCR 检测·识别 / 日漫 OCR / 本地翻译 MarianMT）。
+/// 翻译模型管理器：参照 [ColorizationModelManager] 的下载框架。
 ///
-/// 与 [ColorizationModelManager] 一致的设计目标：模型不强制打包进 APK（体积压力大，
-/// 合计 ~1GB+），改由用户在设置页手动触发下载到应用目录；下载后可通过原生加载切换使用。
+/// 设计：检测 / OCR 类模型（气泡、文本检测、PP-OCR 检测·识别、日漫 OCR、韩文 OCR）
+/// 已随 APK 打包（与上游 release 对齐，见 commit c8d0cc6），无需下载；
+/// 仅**本地翻译模型 MarianMT (en_zh)** 因体积较大（~470MB fp32）改为按需下载。
 ///
 /// 默认镜像指向 Venera-SSR 的 GitHub Release（`translation-models` tag），并附带 ghproxy
-/// 镜像加速；真实模型文件需由维护者在 Release 中托管（见 Task 3 决策）。
+/// 镜像加速；模型文件由维护者在 Release 中托管。
 class TranslationModelManager {
   static const _urlsKeyPrefix = 'translation_model_urls_';
   static const _releaseBase =
@@ -21,53 +21,8 @@ class TranslationModelManager {
 
   /// 单文件模型直接落到 [targetSubdir]/[fileName]；
   /// zip 模型下载后解压到 [targetSubdir]（[markerFile] 用于存在性校验）。
+  /// 仅本地翻译模型（MarianMT en_zh）走按需下载；其余检测/OCR 模型已打包进 APK。
   static final List<TranslationModelEntry> models = [
-    TranslationModelEntry(
-      id: 'bubble',
-      label: '气泡检测 (yolov8m_seg)',
-      isZip: false,
-      fileName: 'yolov8m_seg-speech-bubble.onnx',
-      targetSubdir: 'models/detection',
-      minSize: 40 * 1024 * 1024,
-      defaultUrls: _mirrors('yolov8m_seg-speech-bubble.onnx'),
-    ),
-    TranslationModelEntry(
-      id: 'textdetect',
-      label: '文本检测 (yolo11n-text)',
-      isZip: false,
-      fileName: 'yolo11n-text.onnx',
-      targetSubdir: 'models/detection',
-      minSize: 4 * 1024 * 1024,
-      defaultUrls: _mirrors('yolo11n-text.onnx'),
-    ),
-    TranslationModelEntry(
-      id: 'ocr_det',
-      label: 'OCR 检测 (PP-OCRv6_det)',
-      isZip: false,
-      fileName: 'PP-OCRv6_det_mobile_infer.onnx',
-      targetSubdir: 'models/detection',
-      minSize: 6 * 1024 * 1024,
-      defaultUrls: _mirrors('PP-OCRv6_det_mobile_infer.onnx'),
-    ),
-    TranslationModelEntry(
-      id: 'ocr_rec',
-      label: 'OCR 识别 (PP-OCRv6_small_rec)',
-      isZip: false,
-      fileName: 'PP-OCRv6_small_rec.onnx',
-      targetSubdir: 'models/ocr',
-      minSize: 12 * 1024 * 1024,
-      defaultUrls: _mirrors('PP-OCRv6_small_rec.onnx'),
-    ),
-    TranslationModelEntry(
-      id: 'manga_ocr',
-      label: '日漫 OCR (manga_ocr_mobile)',
-      isZip: true,
-      fileName: 'manga_ocr_mobile.zip',
-      targetSubdir: 'models/ocr/manga_ocr_mobile',
-      markerFile: 'tokenizer',
-      minSize: 150 * 1024 * 1024,
-      defaultUrls: _mirrors('manga_ocr_mobile.zip'),
-    ),
     TranslationModelEntry(
       id: 'marianmt',
       label: '本地翻译 (MarianMT en_zh)',
