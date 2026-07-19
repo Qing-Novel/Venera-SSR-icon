@@ -26,11 +26,22 @@ internal class TranslationPipeline(
         BubbleTextRecognizer(llmClient, ocrEngineRegistry, settingsStore),
     private val pageRegionDetector: PageRegionDetector =
         PageRegionDetector(context.applicationContext, settingsStore),
-    private val marianMtEngine: MarianMtEngine? = null,
+    private var marianMtEngine: MarianMtEngine? = null,
     private val textBubbleTranslationCoordinator: TextBubbleTranslationCoordinator =
         TextBubbleTranslationCoordinator(llmClient = llmClient, localTranslationEngine = marianMtEngine)
 ) {
     private val appContext = context.applicationContext
+    init {
+        initMarianMtEngine()
+    }
+
+    private fun initMarianMtEngine() {
+        val modelDir = settingsStore.loadLocalTranslationModelDir()
+        if (modelDir.isNotBlank()) {
+            marianMtEngine = MarianMtEngine(File(modelDir))
+        }
+    }
+
 
     suspend fun translateImage(
         imageFile: File,
@@ -39,7 +50,11 @@ internal class TranslationPipeline(
         language: TranslationLanguage = TranslationLanguage.JA_TO_ZH,
         providerContext: PageTranslationProviderContext? = null,
         onProgress: (String) -> Unit
-    ): TranslationResult? = withContext(Dispatchers.Default) {
+        ): TranslationResult? = withContext(Dispatchers.Default) {
+        if (marianMtEngine == null) {
+            initMarianMtEngine()
+        }
+
         val resolvedApiSettings = providerContext?.apiSettings
         if (marianMtEngine?.isAvailable() != true && !llmClient.isConfigured(resolvedApiSettings)) {
             onProgress(appContext.getString(R.string.missing_api_settings))

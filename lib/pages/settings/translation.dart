@@ -273,6 +273,81 @@ class _TranslationSettingsState extends State<TranslationSettings> {
             ),
           ),
         ),
+                // ===== 本地翻译配置 (MarianMT) =====
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              "Local Translation (MarianMT)".tl,
+              style: TextStyle(
+                color: context.colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text("Use Local Translation".tl),
+                    subtitle: Text("Use on-device ONNX model instead of remote LLM".tl),
+                    value: _useLocalTranslation,
+                    onChanged: (v) async {
+                      await TranslationService.instance.setLocalTranslationConfig(
+                        useLocalTranslation: v,
+                        modelDir: _localModelDir,
+                      );
+                      setState(() => _useLocalTranslation = v);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    decoration: InputDecoration(
+                      labelText: "Model Directory".tl,
+                      hintText: "/sdcard/Android/data/.../translation/marian",
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      suffixIcon: _localModelAvailable
+                          ? const Icon(Icons.check_circle, color: Colors.green)
+                          : const Icon(Icons.warning, color: Colors.orange),
+                    ),
+                    controller: TextEditingController(text: _localModelDir),
+                    onSubmitted: (v) async {
+                      await TranslationService.instance.setLocalTranslationConfig(
+                        useLocalTranslation: _useLocalTranslation,
+                        modelDir: v,
+                      );
+                      final cfg = await TranslationService.instance.getLocalTranslationConfig();
+                      setState(() {
+                        _localModelDir = v;
+                        _localModelAvailable = cfg['modelAvailable'] as bool? ?? false;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _localModelAvailable
+                        ? "Model files found. Ready to use.".tl
+                        : "Place model files (model.onnx/encoder_model.onnx + vocab.json) in the directory above.".tl,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _localModelAvailable
+                          ? Colors.green
+                          : context.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         // ===== 开关 =====
         _SwitchSetting(
           title: "Translate after download".tl,
