@@ -1,7 +1,5 @@
 part of 'settings_page.dart';
 
-import 'package:venera/pages/settings/translation_model_management.dart';
-
 /// 漫画翻译设置页
 ///
 /// 提供「下载后自动翻译」（批量后台）与「阅读时实时翻译」开关、目标语言、

@@ -26,6 +26,7 @@ import 'package:venera/utils/anime4k/anime4k_service.dart';
 import 'package:venera/utils/colorization/colorization_processor.dart';
 import 'package:venera/utils/colorization/colorization_service.dart';
 import 'package:venera/utils/translation/translation_service.dart';
+import 'package:venera/pages/settings/translation_model_management.dart';
 import 'package:venera/pages/reader/reader.dart';
 import 'package:yaml/yaml.dart';
 

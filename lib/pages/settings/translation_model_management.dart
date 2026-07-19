@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:venera/foundation/context.dart';
+import 'package:venera/utils/translations.dart';
 import 'package:venera/utils/translation/translation_model_manager.dart';
 
 /// 翻译模型管理 UI：列出可下载的翻译模型，支持下载 / 删除 / 进度显示 / 镜像地址管理。
