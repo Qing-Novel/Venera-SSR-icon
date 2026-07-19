@@ -38,7 +38,7 @@ internal class TranslationPipeline(
     private fun initMarianMtEngine() {
         val modelDir = settingsStore.loadLocalTranslationModelDir()
         if (modelDir.isNotBlank()) {
-            marianMtEngine = MarianMtEngine(File(modelDir))
+            marianMtEngine = MarianMtEngine(appContext, File(modelDir))
         }
     }
 
