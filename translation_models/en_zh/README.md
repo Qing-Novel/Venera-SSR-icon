@@ -46,10 +46,45 @@
 模型由 `Helsinki-NLP/opus-mt-en-zh` 经 PyTorch 导出：encoder + decoder 展开成单图，
 `lm_head` 后加 `final_logits_bias`，逐 token 贪心 argmax，预测 EOS(0) 即停。
 
-## 关于体积 / int8
+## 关于体积 / int8（实测结论，2026-07-19）
 
-当前为 fp32（~448 MB）。onnxruntime 的 `quantize_dynamic` 对本图会膨胀
-（embedding 走 `Gather` 不被量化，266 MB fp32 词表保留 + 其余加 int8/scale → 更大），
-故未采用。如需更小体积，建议改走「引擎侧解码 + onnx-community 的
-`opus-mt-en-zh` 分体 int8（`encoder_model_int8.onnx` + `decoder_model_merged_int8.onnx`，合计约 246 MB）」，
-由引擎做自回归循环 + beam search；代价是 `MarianMtEngine` 需改为加载分体模型并补 KV-cache 循环。
+当前分支只提交 **`model.onnx`（fp32，469 MB）**，因为它**唯一经过验证且运行时稳定**：
+CPU 加载 ~43s、5 句翻译逐字正确、无 OOM。
+
+做过的两版 int8 与结果：
+
+| 方案 | 大小 | 加载 | 推理 | 翻译正确性 | 结论 |
+|---|---|---|---|---|---|
+| fp32（已提交） | 469 MB | ~43s | 正常 | ✅ 正确 | **推荐，直接用** |
+| ORT `quantize_dynamic`（QOperator/MatMulInteger） | 466 MB | ~41s | 正常 | ✅ 与 fp32 逐字一致 | 正确但**几乎没变小** |
+| 手工 `DequantizeLinear`（per-axis） | 137 MB | 慢(~8min) | **OOM** | 未跑出结果 | 磁盘小但**运行时不可用** |
+
+**为什么 ORT 动态 int8 几乎没变小（466≈469）？**
+动态量化只量化 `MatMul`/`Gemm` 权重，而本模型最大的一块是
+**嵌入表（65001×512 ≈ 133 MB，走 `Gather` 不被量化）**，且 `lm_head` 与嵌入
+权重共享（tied）→ 整块被跳过，仍以 fp32 保留。量化掉的只是注意力/FFN 那部分
+（省约 77 MB），所以总量几乎不变。
+
+**为什么官方 onnx-community 的 int8 更小（encoder 53MB + decoder 193MB ≈ 246MB）？**
+1. 官方把**嵌入表也量化了**（他们的导出/量化流水线覆盖 `Gather` 与 tied 权重），
+   133 MB 那块能压到 ~33 MB；
+2. 用 ORT 原生融合 int8（`MatMulInteger`），运行时零展开；
+3. **拆分成 encoder / decoder 多个文件**，单文件自然小；解码循环由调用方
+   （transformers.js 或你的 Kotlin）在外层用 for 循环 + KV-cache 跑。
+
+**手工 `DequantizeLinear` 为啥会 OOM？**
+`DequantizeLinear` 没被 ORT 融合，跑 100 步展开解码图时每个 `MatMul` 都要临时
+展开成 fp32 权重 → 100 份拷贝撑爆内存（实测在 8 GB 上限被 kill）。
+
+### 想要「小 + 能跑」的可行路径
+- **路径 A（最小改动）**：继续用 fp32 单文件（469 MB），把 `MarianMtEngine` 的
+  朴素空格分词换成真正 SentencePiece（用 `source.spm`）即可。体积大但稳。
+- **路径 B（最小体积）**：改用官方分体 int8（`encoder_model_int8.onnx` +
+  `decoder_with_past_model_int8.onnx`），代价是 `MarianMtEngine` 要改成
+  「加载分体模型 + 自回归循环 + KV-cache + 真 SentencePiece」。
+- **路径 C（单文件 + 小）**：在本单文件基础上**专门量化嵌入表**（转成
+  `MatMul` + `MatMulNBits`/int8 融合），其余用 ORT 原生 int8，可压到 ~140–200 MB
+  且融合不 OOM；需额外处理 `Gather`→量化路径，工作量中等。
+
+> 量化脚本保留在 `quantize_int8.py`（手工）与 `quantize_ort.py`（ORT 原生），
+> 供参考；当前未提交任何 int8 模型文件。
