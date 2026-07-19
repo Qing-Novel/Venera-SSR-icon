@@ -5,7 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtSession
+import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.TensorInfo
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import kotlin.math.exp
 import kotlin.math.floor
@@ -25,12 +28,16 @@ data class UnifiedRegionDetection(
 )
 
 /**
- * Manga109 YOLO11n-seg speech-bubble detector.
+ * Ultralytics YOLO-seg speech-bubble detector (yolov8m_seg-speech-bubble.onnx).
  *
  * The exported model has one class (`balloon`) and emits the normal Ultralytics
  * segmentation head: [1, 37, N] (`xywh`, confidence, 32 mask coefficients)
  * plus [1, 32, H, W] mask prototypes. The detection boxes and confidence
  * are already decoded by the ONNX graph; only NMS and mask reconstruction remain.
+ *
+ * The graph uses `tensor(float16)` I/O, so the input tensor is packed as
+ * FLOAT16 and the outputs are unpacked from FLOAT16 to float32 before parsing.
+ * A float32 input is rejected by ONNXRuntime and produces zero balloons.
  *
  * Parsing restored to the upstream (jedzqer) channels-first mask-prototype format.
  * Venera had rewritten this to an end2end multi-class format that the real model
@@ -70,9 +77,8 @@ class BubbleDetector(
         val inputBuffer = OnnxImagePreprocessor.bitmapToRgbChwFloat(preprocessed.bitmap)
         preprocessed.bitmap.recycle()
 
-        val inputTensor = OnnxTensor.createTensor(
-            env,
-            FloatBuffer.wrap(inputBuffer),
+        val inputTensor = createFloat16Tensor(
+            inputBuffer,
             longArrayOf(1, 3, inputHeight.toLong(), inputWidth.toLong())
         )
         inputTensor.use { tensor ->
@@ -82,7 +88,7 @@ class BubbleDetector(
                 val output0Shape = (output0.info as TensorInfo).shape
                 val configuredThreshold = settingsStore.loadBubbleConfThresholdPercent() / 100f
                 val rawDetections = parseDetections(
-                    buffer = output0.floatBuffer,
+                    buffer = FloatBuffer.wrap(getTensorFloatArray(output0)),
                     shape = output0Shape,
                     configuredThreshold = configuredThreshold
                 )
@@ -91,7 +97,7 @@ class BubbleDetector(
                     val output1 = outputs[1] as? OnnxTensor
                     output1?.let { tensor ->
                         val shape = (tensor.info as TensorInfo).shape
-                        parsePrototypes(tensor.floatBuffer, shape)
+                        parsePrototypes(FloatBuffer.wrap(getTensorFloatArray(tensor)), shape)
                     }
                 } else {
                     null
@@ -392,7 +398,7 @@ class BubbleDetector(
         // Try the canonical upstream asset name first, then fall back to the
         // legacy name Venera previously referenced, so existing setups that
         // dropped jedzqer's model under the old filename still load.
-        val candidates = listOf(modelAssetName, LEGACY_MODEL_ASSET).distinct()
+        val candidates = listOf(modelAssetName, LEGACY_MODEL_ASSET, LEGACY_MODEL_ASSET_2).distinct()
         var lastError: Exception? = null
         for (name in candidates) {
             try {
@@ -413,14 +419,80 @@ class BubbleDetector(
 
     private fun formatConfidence(value: Float): String = "%.3f".format(value)
 
+    /**
+     * Build a FLOAT16 input tensor. The real `yolov8m_seg-speech-bubble.onnx`
+     * graph was exported with `tensor(float16)` I/O, so a float32 input is
+     * rejected by ONNXRuntime and yields zero detections. We pack each float
+     * into 2 bytes in little-endian order to match the compiled graph.
+     */
+    private fun createFloat16Tensor(data: FloatArray, shape: LongArray): OnnxTensor {
+        val buf = ByteBuffer.allocateDirect(data.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        val sb = buf.asShortBuffer()
+        for (v in data) sb.put(floatToFloat16(v))
+        buf.rewind()
+        return OnnxTensor.createTensor(env, buf, shape, OnnxJavaType.FLOAT16)
+    }
+
+    /**
+     * Read a tensor's raw values into a flat FloatArray, transparently
+     * converting from FLOAT16 when the graph emits half-precision output
+     * (the speech-bubble model does). Falls back to the native float32 path
+     * for any future full-precision re-export.
+     */
+    private fun getTensorFloatArray(tensor: OnnxTensor): FloatArray {
+        val typeInfo = tensor.info as TensorInfo
+        val shape = typeInfo.shape
+        val total = shape.fold(1L) { acc, v -> acc * v }.toInt()
+        return if (typeInfo.type == OnnxJavaType.FLOAT16) {
+            val sb = tensor.byteBuffer.order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            FloatArray(total) { float16ToFloat32(sb.get()) }
+        } else {
+            val fb = tensor.floatBuffer
+            val arr = FloatArray(total)
+            fb.get(arr)
+            arr
+        }
+    }
+
+    private fun floatToFloat16(v: Float): Short {
+        val bits = java.lang.Float.floatToRawIntBits(v)
+        val sign = (bits ushr 16) and 0x8000
+        val exp = ((bits ushr 23) and 0xFF) - 112
+        val mantissa = bits and 0x7FFFFF
+        return when {
+            exp >= 31 -> (sign or 0x7C00).toShort()
+            exp <= 0 -> sign.toShort()
+            else -> (sign or (exp shl 10) or (mantissa ushr 13)).toShort()
+        }
+    }
+
+    private fun float16ToFloat32(half: Short): Float {
+        val h = half.toInt() and 0xFFFF
+        val sign = (h and 0x8000) shl 16
+        val exp = (h and 0x7C00) ushr 10
+        val mantissa = h and 0x03FF
+        return when {
+            exp == 0x1F -> java.lang.Float.intBitsToFloat(sign or 0x7F800000 or (mantissa shl 13))
+            exp == 0 -> java.lang.Float.intBitsToFloat(sign or (mantissa shl 13))
+            else -> java.lang.Float.intBitsToFloat(sign or ((exp + 112) shl 23) or (mantissa shl 13))
+        }
+    }
+
     companion object {
-        const val DEFAULT_MODEL_ASSET = "models/detection/manga109-segmentation-bubble.onnx"
-        private const val LEGACY_MODEL_ASSET = "models/detection/manga109-seg.onnx"
+        // The model actually bundled in jedzqer's v3.x release is
+        // yolov8m_seg-speech-bubble.onnx (float16 YOLO-seg, single class).
+        // The README's "manga109-segmentation-bubble.onnx" name is stale and
+        // the file was never shipped, so the legacy names remain as fallbacks.
+        const val DEFAULT_MODEL_ASSET = "models/detection/yolov8m_seg-speech-bubble.onnx"
+        private const val LEGACY_MODEL_ASSET = "models/detection/manga109-segmentation-bubble.onnx"
+        private const val LEGACY_MODEL_ASSET_2 = "models/detection/manga109-seg.onnx"
         const val CLASS_BALLOON = 0
         // Kept for the shared confidence helper and existing unit tests. The
         // segmentation model itself only emits CLASS_BALLOON.
         const val CLASS_TEXT = 1
-        private const val DEFAULT_INPUT_SIZE = 1600
+        // The model was trained around 960-1024; 1600 yields zero detections
+        // and 512 under-detects. 1024 is the verified sweet spot.
+        private const val DEFAULT_INPUT_SIZE = 1024
         private const val MASK_COEFFICIENT_COUNT = 32
         private const val MASK_THRESHOLD = 0.5f
         private const val MAX_CONTOUR_SAMPLES = 48
