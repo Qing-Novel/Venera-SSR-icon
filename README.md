@@ -30,6 +30,23 @@ Cartoon embedded text translation function
 
 ## 界面展示 (Screenshots)
 
+### 漫画文字翻译 (Comic Text Translation)
+
+| 翻译前 (Before) | 翻译后 (After) |
+|:---:|:---:|
+| ![Translation Before](screenshots/translation_before.jpg) | ![Translation After](screenshots/translation_after.jpg) |
+
+### 黑白漫画 AI 上色 (Black & White Cartoon Coloring)
+
+> 使用 int8 轻量模型，在线实时播放
+> Uses int8 lightweight model, online real-time playback
+
+| 上色前 (Before) | 上色后 (After) |
+|:---:|:---:|
+| ![Colorization Before](screenshots/colorization_before.jpg) | ![Colorization After](screenshots/colorization_after.jpg) |
+
+### 其他界面 (Other Screenshots)
+
 | 漫画源 (Comic Source) | 设置菜单 (Settings) |
 |:---:|:---:|
 | ![Comic Source](screenshots/comic_source.jpg) | ![Settings](screenshots/settings.jpg) |
