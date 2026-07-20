@@ -414,7 +414,8 @@ class LocalManager with ChangeNotifier {
     return res.map((row) => LocalComic.fromRow(row)).toList();
   }
 
-  Future<List<String>> getImages(String id, ComicType type, Object ep) async {
+  Future<List<String>> getImages(String id, ComicType type, Object ep,
+      {bool preferTranslated = false}) async {
     if (ep is! String && ep is! int) {
       throw "Invalid ep";
     }
@@ -452,7 +453,27 @@ class LocalManager with ChangeNotifier {
       }
       return a.name.compareTo(b.name);
     });
-    return files.map((e) => "file://${e.path}").toList();
+    if (!preferTranslated) {
+      return files.map((e) => "file://${e.path}").toList();
+    }
+    // 优先返回翻译后的图片：若当前目录存在 translated/ 子目录且其中含同名文件，
+    // 则改用 translated/<name>，否则回退到原图。该分支仅用于阅读展示，
+    // 不影响导出/批量翻译（它们使用默认的 preferTranslated=false）。
+    final translatedDir = Directory(FilePath.join(directory.path, 'translated'));
+    final translated = <String, File>{};
+    if (await translatedDir.exists()) {
+      await for (var entity in translatedDir.list()) {
+        if (entity is File &&
+            !entity.name.startsWith('.') &&
+            !entity.name.startsWith('cover.')) {
+          translated[entity.name] = entity;
+        }
+      }
+    }
+    return files.map((e) {
+      final t = translated[e.name];
+      return "file://${t?.path ?? e.path}";
+    }).toList();
   }
 
   bool isDownloaded(String id, ComicType type,

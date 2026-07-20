@@ -323,6 +323,12 @@ class _ComicImageState extends State<ComicImage> with WidgetsBindingObserver {
     // 如果没有可用的图像 provider，不标记为正在处理以避免永久卡住
     if (provider == null) return;
 
+    // 若当前页已经是翻译后的缓存图（位于 translated/ 子目录），
+    // 无需再用实时管线重复翻译，直接展示即可。
+    if (provider.imageKey.contains('/translated/')) {
+      return;
+    }
+
     _isTranslating = true;
 
     try {

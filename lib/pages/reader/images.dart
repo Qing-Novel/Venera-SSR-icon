@@ -50,6 +50,7 @@ class _ReaderImagesState extends State<_ReaderImages> {
           reader.cid,
           reader.type,
           reader.chapter,
+          preferTranslated: true,
         );
         setState(() {
           reader.images = images;
