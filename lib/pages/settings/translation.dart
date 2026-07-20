@@ -475,6 +475,7 @@ class _TranslationSettingsState extends State<TranslationSettings> {
                     selected: selected,
                     onSelected: (_) {
                       appdata.settings['translationLanguage'] = e.value;
+                      appdata.saveData();
                       setState(() {});
                     },
                   );

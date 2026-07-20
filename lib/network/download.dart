@@ -16,6 +16,7 @@ import 'package:venera/utils/ext.dart';
 import 'package:venera/utils/file_type.dart';
 import 'package:venera/utils/io.dart';
 import 'package:venera/utils/translation/translation_service.dart';
+import 'package:venera/foundation/translation_notification.dart';
 import 'package:zip_flutter/zip_flutter.dart';
 
 import 'file_downloader.dart';
@@ -949,6 +950,9 @@ Future<void> _enqueueTranslationAfterDownload({
     }
     Log.info('Translation',
         'batch translate start: ${pageUrls.length} pages for $id (lang=$language)');
+    var done = 0;
+    var failed = 0;
+    await TranslationNotification.start('Batch Translation', pageUrls.length);
     for (final url in pageUrls) {
       final file =
           url.startsWith('file://') ? url.substring('file://'.length) : url;
@@ -970,13 +974,22 @@ Future<void> _enqueueTranslationAfterDownload({
             final translatedFile = File(FilePath.join(translatedDir.path, fileName));
             await translatedFile.writeAsBytes(result);
             Log.info('Translation', 'translated image saved to ${translatedFile.path}');
+            done++;
+            await TranslationNotification.update('Batch Translation', done, pageUrls.length);
           }
         }
       } catch (e) {
         Log.error('Translation', 'failed to translate $file: $e');
+        failed++;
       }
     }
-    Log.info('Translation', 'batch translate done for $id');
+    await TranslationNotification.complete(
+      'Batch Translation',
+      done,
+      pageUrls.length,
+      ok: failed == 0,
+    );
+    Log.info('Translation', 'batch translate done for $id (done=$done, failed=$failed)');
   } catch (e, s) {
     Log.error('Translation', 'batch translate after download failed: $e\n$s');
   }
