@@ -11,14 +11,14 @@ All running locally
 
 ## Features
 
-黑白漫画上色
-Black and white cartoon coloring
-（正在 feature/colorization 分支测试本地 AI 实时黑白漫画上色功能的更多可选模型）
+**黑白漫画上色**
+**Black and white cartoon coloring**
+（正在 feature/colorization 分支测试本地 AI 实时黑白漫画上色功能的**更多可选模型**）
 
-支持webdav同步
+**支持webdav同步**
 
-正在feature/translation-embed分支测试漫画文字替换翻译功能
-Cartoon embedded text translation function
+**漫画内嵌文字替换并翻译功能
+Cartoon embedded text translation function**
 
 - Read local comics
 - Use javascript to create comic sources
